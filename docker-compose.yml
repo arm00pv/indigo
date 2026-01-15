@@ -9,4 +9,6 @@ services:
       - ./backend/mfa.db:/app/backend/mfa.db
     environment:
       - PYTHONUNBUFFERED=1
+      # Set this to your Slack/Discord webhook URL to receive critical alerts (Duress/Abuse)
+      # - ALERT_WEBHOOK_URL=https://hooks.slack.com/services/XXX/YYY/ZZZ
     restart: always

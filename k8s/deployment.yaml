@@ -23,6 +23,8 @@ spec:
         env:
         - name: PYTHONUNBUFFERED
           value: "1"
+        - name: ALERT_WEBHOOK_URL
+          value: "" # Set your Webhook URL here
         # In production, use a persistent volume claim for SQLite or switch to PostgreSQL
         volumeMounts:
         - name: db-storage

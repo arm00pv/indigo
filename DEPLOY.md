@@ -1,13 +1,13 @@
-# Indigo MFA Deployment Guide
+# Indigo MFA Deployment & Implementation Guide
 
-This comprehensive guide covers deploying the Indigo MFA Backend on various platforms (Linux LAMP, Docker, Kubernetes) and provides implementation details for building native mobile clients (Swift, Kotlin).
+This guide covers the deployment, configuration, and client implementation for **Indigo MFA**, a high-security, decentralized authentication system featuring Duress Mode, Adaptive Security Policies, and real-time forensics.
 
 ---
 
 ## 🏗️ 1. Backend Deployment
 
 ### A. Linux LAMP Server (Apache + Gunicorn)
-This is the standard deployment for a single Linux server (Ubuntu/Debian/CentOS).
+Standard deployment for a single Linux server (Ubuntu/Debian/CentOS).
 
 #### 1. Prerequisites
 *   Python 3.8+
@@ -23,13 +23,12 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-#### 3. Configure Systemd (Keep it running)
-Create a service file to manage the Gunicorn process automatically.
-**File:** `/etc/systemd/system/indigo-mfa.service`
+#### 3. Configure Systemd
+Create a service file: `/etc/systemd/system/indigo-mfa.service`
 
 ```ini
 [Unit]
-Description=Gunicorn instance to serve Indigo MFA
+Description=Indigo MFA Backend
 After=network.target
 
 [Service]
@@ -38,27 +37,23 @@ Group=www-data
 WorkingDirectory=/var/www/indigo-mfa
 Environment="PATH=/var/www/indigo-mfa/venv/bin"
 Environment="PYTHONPATH=/var/www/indigo-mfa"
+# Alerting (Optional)
+Environment="ALERT_WEBHOOK_URL=https://your-slack-webhook-url"
 ExecStart=/var/www/indigo-mfa/venv/bin/gunicorn --workers 3 --bind unix:indigo.sock -m 007 backend.app:app
 
 [Install]
 WantedBy=multi-user.target
 ```
-
-Enable and start the service:
-```bash
-sudo systemctl start indigo-mfa
-sudo systemctl enable indigo-mfa
-```
+Enable: `sudo systemctl enable --now indigo-mfa`
 
 #### 4. Configure Apache (Reverse Proxy)
-Configure Apache to proxy traffic to the socket created by Gunicorn.
-
-**File:** `/etc/apache2/sites-available/indigo.conf`
+File: `/etc/apache2/sites-available/indigo.conf`
 
 ```apache
 <VirtualHost *:80>
     ServerName auth.yourcompany.com
 
+    # Proxy to Gunicorn Socket
     ProxyPreserveHost On
     ProxyPass / unix:/var/www/indigo-mfa/indigo.sock|http://127.0.0.1/
     ProxyPassReverse / unix:/var/www/indigo-mfa/indigo.sock|http://127.0.0.1/
@@ -67,144 +62,113 @@ Configure Apache to proxy traffic to the socket created by Gunicorn.
     CustomLog ${APACHE_LOG_DIR}/indigo_access.log combined
 </VirtualHost>
 ```
-Enable site and modules: `sudo a2enmod proxy proxy_http && sudo a2ensite indigo && sudo systemctl restart apache2`
 
 ---
 
-### B. Docker Deployment
-For containerized environments or quick testing.
+### B. Docker & Kubernetes
 
-#### 1. Build and Run
+#### Docker Compose
 ```bash
-docker build -t indigo-mfa .
-docker run -d -p 5000:5000 indigo-mfa
-```
-
-#### 2. Using Docker Compose
-```bash
+# Edit docker-compose.yml to set ALERT_WEBHOOK_URL
 docker-compose up -d
 ```
-The API will be available at `http://localhost:5000`.
+
+#### Kubernetes
+1.  Edit `k8s/deployment.yaml` to set your `ALERT_WEBHOOK_URL`.
+2.  Apply manifests:
+    ```bash
+    kubectl apply -f k8s/deployment.yaml
+    kubectl apply -f k8s/service.yaml
+    ```
 
 ---
 
-### C. Kubernetes (K8s) Cluster
-For high availability and scaling.
+## 🛡️ 2. Security Features & Configuration
 
-#### 1. Deploy
-Apply the provided manifests in the `k8s/` directory.
+### A. Real-Time Alerts (Webhooks)
+Indigo MFA can send JSON POST requests to a webhook (Slack, Discord, PagerDuty) for critical events:
+*   **DURESS:** User entered a panic code.
+*   **ABUSE:** User reached the 10-failure soft-lock threshold.
 
-```bash
-kubectl apply -f k8s/deployment.yaml
-kubectl apply -f k8s/service.yaml
-```
+**Setup:** Set the `ALERT_WEBHOOK_URL` environment variable.
 
-#### 2. Scaling
-To handle more traffic, scale the replicas:
-```bash
-kubectl scale deployment indigo-mfa-backend --replicas=5
-```
-*Note: In production, ensure you replace the SQLite DB with a centralized PostgreSQL/MySQL database so all pods share the same data.*
+### B. Adaptive Policy Engine
+Managed via the Dashboard (`/dashboard`) or API.
+
+1.  **Time-Fencing (Business Hours):**
+    *   Toggle to restrict authentication to **08:00 - 18:00** (Server Time).
+    *   Useful for corporate environments to reduce off-hour attack surface.
+    *   *Note:* This applies globally based on the server's timezone.
+2.  **IP Blacklisting:**
+    *   Block specific IPs or Subnets (CIDR, e.g., `192.168.1.0/24`).
+    *   Requests from these IPs are rejected immediately (403 Forbidden).
+
+### C. Abuse Thresholds
+*   **5 Failures:** Account locked for 15 minutes (Temp Lock).
+*   **10 Failures:** Account **Soft Locked**. Requires Admin intervention (Unlock button in Dashboard) to restore access.
 
 ---
 
-## 📱 2. Mobile Client Implementation Guide
+## 📱 3. Mobile Client Implementation
 
-To use Indigo MFA, you need to build a mobile app that acts as the Authenticator. The core logic relies on **Elliptic Curve Cryptography (ECC)**.
+The client app acts as the Secure Enclave. It holds the Private Key and performs decryption.
 
-### Core Cryptography Specs
-*   **Curve:** SECP256R1 (NIST P-256) / Prime256v1
-*   **Encryption Scheme:** ECIES (Elliptic Curve Integrated Encryption Scheme)
-    *   **Key Agreement:** ECDH (Elliptic Curve Diffie-Hellman)
-    *   **KDF:** HKDF-SHA256
-    *   **Symmetric Encryption:** AES-256-GCM
+### Core Specs
+*   **Curve:** SECP256R1 (NIST P-256)
+*   **Encryption:** ECIES (ECDH + HKDF + AES-256-GCM)
 
-### A. iOS App (Swift)
-Use the native `CryptoKit` framework (available iOS 13+).
+### 🚨 Duress Mode Implementation (Critical)
+To support **Stealth Auth**, the client must handle a secondary "Duress PIN".
 
-**1. Generate Key Pair & Export Public Key**
+**Logic:**
+1.  If User enters **Standard PIN**: Decrypt OTP. Send to Server.
+2.  If User enters **Duress PIN**:
+    *   Decrypt OTP.
+    *   **Modify the OTP:** Increment the last digit by 1 (modulo 10).
+    *   *Example:* `123456` -> `123457`. `123459` -> `123450`.
+    *   Send modified OTP to Server.
+
+**Why?** The server checks both the original and modified OTP. If the modified one matches, it authenticates the user but triggers a **Silent Alarm**.
+
+### Swift (iOS) Snippet
 ```swift
-import CryptoKit
+func getDuressOtp(originalOtp: String) -> String {
+    guard let lastChar = originalOtp.last, let lastDigit = Int(String(lastChar)) else { return originalOtp }
+    let newDigit = (lastDigit + 1) % 10
+    return String(originalOtp.dropLast()) + String(newDigit)
+}
 
-// Generate Private Key (Store this securely in Keychain)
-let privateKey = P256.KeyAgreement.PrivateKey()
-let publicKey = privateKey.publicKey
-
-// Export Public Key as PEM/DER for the server
-let x963Representation = publicKey.x963Representation
-// Convert x963 to PEM format or send raw bytes depending on your server adaptation
-```
-
-**2. Decrypt Challenge (ECIES)**
-Swift's `CryptoKit` supports `AES.GCM` and `SharedSecret`.
-
-```swift
-func decryptChallenge(encryptedData: Data, privateKey: P256.KeyAgreement.PrivateKey) throws -> String {
-    // 1. Parse encryptedData to extract Ephemeral Public Key, Nonce, and Ciphertext
-    // (Assume data structure: [Len][Pub][Nonce][Cipher])
-
-    // 2. Perform ECDH to get Shared Secret
-    let ephemeralPub = try P256.KeyAgreement.PublicKey(x963Representation: ephemeralPubBytes)
-    let sharedSecret = try privateKey.sharedSecretFromKeyAgreement(with: ephemeralPub)
-
-    // 3. Derive Symmetric Key (HKDF)
-    let symmetricKey = sharedSecret.hkdfDerivedSymmetricKey(
-        using: SHA256.self,
-        salt: Data(),
-        sharedInfo: "mfa-protocol-encryption".data(using: .utf8)!,
-        outputByteCount: 32
-    )
-
-    // 4. Decrypt (AES-GCM)
-    let sealedBox = try AES.GCM.SealedBox(nonce: AES.GCM.Nonce(data: nonceData), ciphertext: ciphertext, tag: tag)
-    let decryptedData = try AES.GCM.open(sealedBox, using: symmetricKey)
-
-    return String(data: decryptedData, encoding: .utf8)!
+// In your Auth Flow:
+let decryptedOtp = decrypt(encryptedData, key) // ECIES decryption
+if pin == userDuressPin {
+    let stealthOtp = getDuressOtp(originalOtp: decryptedOtp)
+    submitToServer(stealthOtp)
+} else {
+    submitToServer(decryptedOtp)
 }
 ```
 
-### B. Android App (Kotlin)
-Use `Google Tink` (recommended) or `Bouncy Castle`.
-
-**Using Google Tink (Easier):**
-Tink handles ECIES complexity automatically.
-
+### Kotlin (Android) Snippet
 ```kotlin
-// build.gradle
-implementation 'com.google.crypto.tink:tink-android:1.7.0'
+fun getDuressOtp(otp: String): String {
+    if (otp.isEmpty() || !otp.all { it.isDigit() }) return otp
+    val lastDigit = otp.last().toString().toInt()
+    val newDigit = (lastDigit + 1) % 10
+    return otp.dropLast(1) + newDigit
+}
 ```
-
-```kotlin
-import com.google.crypto.tink.HybridDecrypt
-import com.google.crypto.tink.KeysetHandle
-import com.google.crypto.tink.hybrid.HybridConfig
-
-// 1. Initialize
-HybridConfig.register()
-
-// 2. Generate Keys
-val privateKeysetHandle = KeysetHandle.generateNew(HybridKeyTemplates.ECIES_P256_HKDF_HMAC_SHA256_AES128_GCM)
-val publicKeysetHandle = privateKeysetHandle.publicKeysetHandle
-
-// 3. Decrypt
-val hybridDecrypt = privateKeysetHandle.getPrimitive(HybridDecrypt::class.java)
-val decrypted = hybridDecrypt.decrypt(encryptedData, null) // Context info if needed
-val otp = String(decrypted, Charsets.UTF_8)
-```
-*Note: Ensure the Server's ECIES parameters match Tink's default or configure Tink to match the Python `cryptography` library parameters.*
-
-**Using Java Cryptography Architecture (Standard):**
-1.  **KeyPairGenerator** with `EC` and `secp256r1`.
-2.  **KeyAgreement** (ECDH) to derive shared secret.
-3.  **HKDF** (Standard logic).
-4.  **Cipher** (`AES/GCM/NoPadding`).
 
 ---
 
-## 🔒 Security Best Practices
-1.  **Secure Storage**:
-    *   **iOS**: Always store the Private Key in the **Keychain**.
-    *   **Android**: Use the **Android Keystore System**.
-2.  **PIN Protection**:
-    *   Do not just check `if (pin == input)`. Use the PIN to **encrypt the Private Key** at rest, or use the Biometric API (FaceID/TouchID) to gate access to the Keychain item.
-3.  **SSL/TLS**: Always serve the Backend API over HTTPS.
+## 🔧 4. Admin API Reference
+
+The backend provides a REST API for management.
+
+| Method | Endpoint | Description | Payload |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/admin/user/<id>/lock` | Manually Soft Lock a user | - |
+| `POST` | `/admin/user/<id>/unlock` | Unlock a user | - |
+| `POST` | `/admin/settings` | Update Global Settings | `{"business_hours_enabled": true}` |
+| `POST` | `/admin/policy/blacklist` | Block an IP/CIDR | `{"cidr": "1.2.3.4", "reason": "Spam"}` |
+| `DELETE` | `/admin/policy/blacklist` | Unblock an IP | `{"cidr": "1.2.3.4"}` |
+| `GET` | `/admin/export/logs` | Download Audit Logs | Params: `format=csv|json`, `filter=all|threats` |
