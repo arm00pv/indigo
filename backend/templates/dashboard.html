@@ -8,6 +8,8 @@
     <link href="https://cdn.jsdelivr.net/npm/bootswatch@5.3.0/dist/cosmo/bootstrap.min.css" rel="stylesheet">
     <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Bootstrap Bundle (JS + Popper) for Dropdowns -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body { background-color: #f0f2f5; }
@@ -30,8 +32,21 @@
 <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4">
     <div class="container">
         <a class="navbar-brand" href="#"><i class="fas fa-shield-alt me-2"></i>Indigo MFA Admin</a>
-        <div class="d-flex">
-            <a href="/admin/export/logs" class="btn btn-light btn-sm me-3"><i class="fas fa-download me-1"></i> Export Logs (CSV)</a>
+        <div class="d-flex align-items-center">
+            <div class="dropdown me-3">
+                <button class="btn btn-light btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                    <i class="fas fa-download me-1"></i> Export Reports
+                </button>
+                <ul class="dropdown-menu">
+                    <li><h6 class="dropdown-header">Full Audit Logs</h6></li>
+                    <li><a class="dropdown-item" href="/admin/export/logs?format=csv&filter=all">Export as CSV</a></li>
+                    <li><a class="dropdown-item" href="/admin/export/logs?format=json&filter=all">Export as JSON</a></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><h6 class="dropdown-header">Filtered Reports</h6></li>
+                    <li><a class="dropdown-item" href="/admin/export/logs?format=csv&filter=threats">Threat Report (CSV)</a></li>
+                    <li><a class="dropdown-item" href="/admin/export/logs?format=csv&filter=errors">Error Report (CSV)</a></li>
+                </ul>
+            </div>
             <span class="navbar-text text-white">
                 <i class="fas fa-circle text-success small me-1"></i> System Online
             </span>
@@ -97,12 +112,37 @@
     </div>
 
     <!-- Main Content -->
-    <div class="row">
-        <!-- Chart -->
+    <div class="row mb-4">
+        <!-- Activity Chart -->
+        <div class="col-lg-8 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-transparent">
+                    <i class="fas fa-chart-line me-2"></i>24-Hour Activity
+                </div>
+                <div class="card-body">
+                    <canvas id="activityChart" style="max-height: 300px;"></canvas>
+                </div>
+            </div>
+        </div>
+        <!-- Failure Chart -->
         <div class="col-lg-4 mb-4">
             <div class="card h-100">
                 <div class="card-header bg-transparent">
-                    <i class="fas fa-chart-pie me-2"></i>Auth Success Rate
+                    <i class="fas fa-chart-pie me-2"></i>Failure Reasons
+                </div>
+                <div class="card-body d-flex align-items-center justify-content-center">
+                    <canvas id="failureChart" style="max-height: 250px;"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Success Rate Chart -->
+        <div class="col-lg-4 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-transparent">
+                    <i class="fas fa-chart-doughnut me-2"></i>Overall Success Rate
                 </div>
                 <div class="card-body d-flex align-items-center justify-content-center">
                     <canvas id="authChart" style="max-height: 250px;"></canvas>
@@ -162,6 +202,8 @@
 
 <script>
     let authChartInstance = null;
+    let activityChartInstance = null;
+    let failureChartInstance = null;
 
     async function fetchData() {
         try {
@@ -182,8 +224,10 @@
                  threatEl.parentElement.querySelector('h6').classList.add('text-white-50');
             }
 
-            // Update Chart
-            updateChart(data.auth_stats[0], data.auth_stats[1]);
+            // Update Charts
+            updateAuthChart(data.auth_stats[0], data.auth_stats[1]);
+            updateActivityChart(data.activity_over_time);
+            updateFailureChart(data.failure_breakdown);
 
             // Update Abuse Monitor
             const abuseCard = document.getElementById('abuse-card');
@@ -251,15 +295,10 @@
         }
     }
 
-    function updateChart(success, fail) {
+    function updateAuthChart(success, fail) {
         const ctx = document.getElementById('authChart').getContext('2d');
         if (authChartInstance) {
             authChartInstance.destroy();
-        }
-
-        // If no data, show empty
-        if (success === 0 && fail === 0) {
-            // Optional: Handle empty state
         }
 
         authChartInstance = new Chart(ctx, {
@@ -270,6 +309,71 @@
                     data: [success, fail],
                     backgroundColor: ['#198754', '#ffc107'],
                     borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom' }
+                }
+            }
+        });
+    }
+
+    function updateActivityChart(data) {
+        const ctx = document.getElementById('activityChart').getContext('2d');
+        if (activityChartInstance) {
+            activityChartInstance.destroy();
+        }
+
+        if (!data || data.length === 0) return;
+
+        const labels = data.map(d => d.hour.split(' ')[1]); // Extract HH:00
+        const values = data.map(d => d.count);
+
+        activityChartInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Auth Requests',
+                    data: values,
+                    borderColor: '#0d6efd',
+                    backgroundColor: 'rgba(13, 110, 253, 0.1)',
+                    fill: true,
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: { beginAtZero: true, ticks: { precision: 0 } }
+                }
+            }
+        });
+    }
+
+    function updateFailureChart(data) {
+        const ctx = document.getElementById('failureChart').getContext('2d');
+        if (failureChartInstance) {
+            failureChartInstance.destroy();
+        }
+
+        if (!data || data.length === 0) return;
+
+        const labels = data.map(d => d.label);
+        const values = data.map(d => d.count);
+        const colors = ['#dc3545', '#fd7e14', '#ffc107', '#6c757d', '#20c997'];
+
+        failureChartInstance = new Chart(ctx, {
+            type: 'polarArea',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: values,
+                    backgroundColor: colors
                 }]
             },
             options: {

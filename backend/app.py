@@ -5,6 +5,7 @@ import logging
 import datetime
 import csv
 import io
+import json
 from flask import Flask, request, jsonify, render_template, Response
 
 # Add project root to path so we can import mfa_sdk
@@ -38,12 +39,10 @@ def init_db():
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS users
                  (user_id TEXT PRIMARY KEY, public_key_pem BLOB)''')
-    # Add created_at to active_challenges
     c.execute('''CREATE TABLE IF NOT EXISTS active_challenges
                  (user_id TEXT PRIMARY KEY, otp TEXT, created_at DATETIME)''')
 
     # Audit Log Table
-    # Add IP Address column
     try:
         c.execute("ALTER TABLE audit_logs ADD COLUMN ip_address TEXT")
     except sqlite3.OperationalError:
@@ -58,8 +57,7 @@ def init_db():
                   details TEXT,
                   ip_address TEXT)''')
 
-    # Security Table (Rate Limiting & Soft Lock)
-    # Adding lock_type column: 'NONE', 'TEMP', 'PERMANENT'
+    # Security Table
     try:
         c.execute("ALTER TABLE user_security ADD COLUMN lock_type TEXT DEFAULT 'NONE'")
     except sqlite3.OperationalError:
@@ -77,21 +75,17 @@ init_db()
 
 def log_and_record(event_type, user_id, status, details=""):
     """Logs to file, DB (with IP), and triggers Webhooks."""
-    # 0. Capture Context
     ip_address = request.remote_addr if request else "unknown"
-
-    # 1. File Log
     log_msg = f"[{event_type}] User: {user_id} | IP: {ip_address} | Status: {status} | {details}"
+
     if status == "SUCCESS":
         logger.info(log_msg)
     elif status == "DURESS" or status == "ABUSE":
         logger.critical(f"🚨 {status} SIGNAL: {log_msg}")
-        # Trigger Webhook
         send_webhook_alert(event_type, user_id, status, details)
     else:
         logger.warning(log_msg)
 
-    # 2. DB Record
     try:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
@@ -124,13 +118,11 @@ def register():
         c = conn.cursor()
         c.execute("INSERT OR REPLACE INTO users (user_id, public_key_pem) VALUES (?, ?)",
                   (user_id, public_key_pem))
-        # Reset security stats on new registration/update
         c.execute("DELETE FROM user_security WHERE user_id=?", (user_id,))
         conn.commit()
         conn.close()
 
         verifier.register_user(user_id, public_key_pem)
-
         log_and_record("REGISTER", user_id, "SUCCESS", "User registered")
         return jsonify({"message": f"User {user_id} registered successfully."}), 201
     except Exception as e:
@@ -145,7 +137,6 @@ def get_challenge():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
-    # 1. Check if user is locked (Temp or Permanent)
     c.execute("SELECT locked_until, lock_type FROM user_security WHERE user_id=?", (user_id,))
     row = c.fetchone()
     if row:
@@ -164,7 +155,6 @@ def get_challenge():
                 log_and_record("CHALLENGE", user_id, "BLOCK", "User Locked")
                 return jsonify({"error": "Account temporarily locked due to too many failed attempts."}), 403
 
-    # 2. Get Key
     c.execute("SELECT public_key_pem FROM users WHERE user_id=?", (user_id,))
     row = c.fetchone()
 
@@ -178,7 +168,6 @@ def get_challenge():
     verifier.register_user(user_id, public_key_pem)
     otp = verifier.generate_otp()
 
-    # 3. Store OTP with Timestamp
     now = datetime.datetime.now().isoformat()
     c.execute("INSERT OR REPLACE INTO active_challenges (user_id, otp, created_at) VALUES (?, ?, ?)",
               (user_id, otp, now))
@@ -186,7 +175,6 @@ def get_challenge():
     conn.close()
 
     encrypted_blob = verifier.encrypt_otp_for_user(user_id, otp)
-
     log_and_record("CHALLENGE", user_id, "SUCCESS", "OTP generated")
 
     return jsonify({
@@ -203,7 +191,6 @@ def verify_otp():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
-    # 1. Check Lock Status
     c.execute("SELECT failed_attempts, locked_until, lock_type FROM user_security WHERE user_id=?", (user_id,))
     sec_row = c.fetchone()
     if sec_row:
@@ -215,13 +202,11 @@ def verify_otp():
         locked_until = None
         lock_type = 'NONE'
 
-    # Check Permanent Lock
     if lock_type == 'PERMANENT':
         conn.close()
         log_and_record("AUTH", user_id, "BLOCK", "User Soft Locked (Abuse)")
         return jsonify({"error": "Device Soft Locked due to abuse. Contact Admin."}), 403
 
-    # Check Temp Lock
     if locked_until:
         locked_until_dt = datetime.datetime.fromisoformat(locked_until)
         if datetime.datetime.now() < locked_until_dt:
@@ -229,11 +214,8 @@ def verify_otp():
             log_and_record("AUTH", user_id, "BLOCK", "User Locked")
             return jsonify({"error": "Account temporarily locked."}), 403
         else:
-            # Lock expired, reset stats for temp lock
             failed_attempts = 0
-            # Note: We update DB later depending on success/fail
 
-    # 2. Get Challenge
     c.execute("SELECT otp, created_at FROM active_challenges WHERE user_id=?", (user_id,))
     row = c.fetchone()
 
@@ -245,19 +227,15 @@ def verify_otp():
     original_otp = row[0]
     created_at = datetime.datetime.fromisoformat(row[1]) if row[1] else datetime.datetime.now()
 
-    # 3. Check TTL (5 minutes)
     if datetime.datetime.now() - created_at > datetime.timedelta(minutes=5):
         conn.close()
         log_and_record("AUTH", user_id, "FAIL", "OTP Expired")
         return jsonify({"error": "OTP Expired. Please request a new one."}), 400
 
-    # 4. Verify OTP (Standard or Duress)
     status = verifier.verify_otp(original_otp, submitted_otp)
 
     if status == VerificationStatus.VALID or status == VerificationStatus.DURESS:
-        # Success (or Duress Success)
         c.execute("DELETE FROM active_challenges WHERE user_id=?", (user_id,))
-        # Reset security failures and locks
         c.execute("INSERT OR REPLACE INTO user_security (user_id, failed_attempts, locked_until, lock_type) VALUES (?, 0, NULL, 'NONE')", (user_id,))
         conn.commit()
         conn.close()
@@ -269,19 +247,16 @@ def verify_otp():
 
         return jsonify({"status": "success", "message": "Authentication Successful"}), 200
     else:
-        # Failure: Increment count
         failed_attempts += 1
         new_locked_until = None
         new_lock_type = 'NONE'
 
         if failed_attempts >= 10:
-             # Permanent Soft Lock
              new_lock_type = 'PERMANENT'
              log_and_record("AUTH", user_id, "ABUSE", "Soft Lock Activated - Abuse Detected")
              msg = "Device Soft Locked due to abuse. Contact Admin."
              http_code = 403
         elif failed_attempts >= 5:
-            # Temp Lock for 15 mins
             new_locked_until = (datetime.datetime.now() + datetime.timedelta(minutes=15)).isoformat()
             new_lock_type = 'TEMP'
             log_and_record("AUTH", user_id, "BLOCK", "Too many failures - Account Locked")
@@ -299,10 +274,8 @@ def verify_otp():
 
         return jsonify({"status": "failure", "message": msg}), http_code
 
-# --- Admin Routes ---
 @app.route('/admin/user/<user_id>/lock', methods=['POST'])
 def admin_lock_user(user_id):
-    # In prod, add Admin Auth check!
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("INSERT OR REPLACE INTO user_security (user_id, failed_attempts, locked_until, lock_type) VALUES (?, 0, NULL, 'PERMANENT')",
@@ -314,7 +287,6 @@ def admin_lock_user(user_id):
 
 @app.route('/admin/user/<user_id>/unlock', methods=['POST'])
 def admin_unlock_user(user_id):
-    # In prod, add Admin Auth check!
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("INSERT OR REPLACE INTO user_security (user_id, failed_attempts, locked_until, lock_type) VALUES (?, 0, NULL, 'NONE')",
@@ -326,30 +298,48 @@ def admin_unlock_user(user_id):
 
 @app.route('/admin/export/logs')
 def admin_export_logs():
-    # In prod, add Admin Auth check!
+    fmt = request.args.get('format', 'csv')
+    filter_type = request.args.get('filter', 'all')
+
     conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    c.execute("SELECT id, timestamp, event_type, user_id, ip_address, status, details FROM audit_logs ORDER BY id DESC")
+
+    query = "SELECT id, timestamp, event_type, user_id, ip_address, status, details FROM audit_logs"
+    params = []
+
+    if filter_type == 'threats':
+        query += " WHERE status IN ('DURESS', 'ABUSE', 'BLOCK')"
+    elif filter_type == 'errors':
+        query += " WHERE status IN ('FAIL', 'BLOCK', 'ABUSE', 'DURESS')"
+
+    query += " ORDER BY id DESC"
+
+    c.execute(query, params)
     rows = c.fetchall()
     conn.close()
 
-    # Generate CSV
-    si = io.StringIO()
-    cw = csv.writer(si)
-    cw.writerow(['ID', 'Timestamp', 'Event', 'User', 'IP Address', 'Status', 'Details'])
-    cw.writerows(rows)
-    output = si.getvalue()
+    if fmt == 'json':
+        data = [dict(row) for row in rows]
+        return jsonify(data)
+    else:
+        si = io.StringIO()
+        cw = csv.writer(si)
+        cw.writerow(['ID', 'Timestamp', 'Event', 'User', 'IP Address', 'Status', 'Details'])
+        for row in rows:
+            cw.writerow([row['id'], row['timestamp'], row['event_type'], row['user_id'],
+                         row['ip_address'], row['status'], row['details']])
+        output = si.getvalue()
 
-    return Response(
-        output,
-        mimetype="text/csv",
-        headers={"Content-disposition": "attachment; filename=indigo_audit_logs.csv"}
-    )
+        filename = f"indigo_logs_{filter_type}.csv"
+        return Response(
+            output,
+            mimetype="text/csv",
+            headers={"Content-disposition": f"attachment; filename={filename}"}
+        )
 
 @app.route('/user/<user_id>/revoke', methods=['DELETE'])
 def revoke_user(user_id):
-    # In prod, add Admin Auth check here!
-
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("DELETE FROM users WHERE user_id=?", (user_id,))
@@ -376,7 +366,7 @@ def api_stats():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
-    # 1. Total Counts
+    # 1. Basic Counts
     c.execute("SELECT COUNT(*) FROM audit_logs WHERE event_type='REGISTER' AND status='SUCCESS'")
     total_users = c.fetchone()[0]
 
@@ -386,27 +376,55 @@ def api_stats():
     c.execute("SELECT COUNT(*) FROM audit_logs WHERE event_type='AUTH' AND status='FAIL'")
     failed_auths = c.fetchone()[0]
 
-    # 2. Blocked Users (Temp + Permanent)
     try:
         c.execute("SELECT COUNT(*) FROM user_security WHERE locked_until IS NOT NULL OR lock_type='PERMANENT'")
         blocked_users = c.fetchone()[0]
     except:
         blocked_users = 0
 
-    # 3. Soft Locked Users (Abuse List)
     try:
         c.execute("SELECT user_id, failed_attempts FROM user_security WHERE lock_type='PERMANENT'")
         soft_locked_list = [{"user_id": r[0], "fails": r[1]} for r in c.fetchall()]
     except:
         soft_locked_list = []
 
-    # 4. Threats (Duress + Abuse)
     c.execute("SELECT COUNT(*) FROM audit_logs WHERE status='DURESS' OR status='ABUSE'")
     threat_count = c.fetchone()[0]
 
-    # 5. Recent Logs (Include IP)
     c.execute("SELECT timestamp, event_type, user_id, status, details, ip_address FROM audit_logs ORDER BY id DESC LIMIT 10")
     recent_logs = [{"timestamp": r[0], "event": r[1], "user": r[2], "status": r[3], "details": r[4], "ip": r[5] or "unknown"} for r in c.fetchall()]
+
+    # --- Advanced Metrics ---
+
+    # 6. Hourly Activity (Last 24h)
+    # Using SQLite strftime to group by Hour (YYYY-MM-DD HH)
+    one_day_ago = (datetime.datetime.now() - datetime.timedelta(hours=24)).isoformat()
+    c.execute("""
+        SELECT strftime('%Y-%m-%d %H:00', timestamp) as hour, COUNT(*)
+        FROM audit_logs
+        WHERE timestamp > ? AND event_type='AUTH'
+        GROUP BY hour
+        ORDER BY hour
+    """, (one_day_ago,))
+    activity_data = [{"hour": r[0], "count": r[1]} for r in c.fetchall()]
+
+    # 7. Failure Breakdown
+    c.execute("""
+        SELECT details, COUNT(*)
+        FROM audit_logs
+        WHERE status != 'SUCCESS'
+        GROUP BY details
+        ORDER BY COUNT(*) DESC
+        LIMIT 5
+    """)
+    # Simplify details to avoid long labels (e.g., "Invalid OTP..." -> "Invalid OTP")
+    failure_data = []
+    for r in c.fetchall():
+        label = r[0]
+        if "Invalid OTP" in label: label = "Invalid OTP"
+        elif "Expired" in label: label = "OTP Expired"
+        elif "Locked" in label: label = "Account Locked"
+        failure_data.append({"label": label, "count": r[1]})
 
     conn.close()
 
@@ -416,7 +434,9 @@ def api_stats():
         "threat_count": threat_count,
         "auth_stats": [successful_auths, failed_auths],
         "logs": recent_logs,
-        "soft_locked_users": soft_locked_list
+        "soft_locked_users": soft_locked_list,
+        "activity_over_time": activity_data,
+        "failure_breakdown": failure_data
     })
 
 if __name__ == "__main__":
