@@ -1,6 +1,6 @@
 # Deployment Guide (Linux LAMP)
 
-This guide explains how to deploy the Decentralized MFA Backend on a Linux server and how to use the Client.
+This guide explains how to deploy the Indigo MFA Backend on a Linux server and how to use the Client.
 
 ## Prerequisites
 

@@ -129,7 +129,7 @@ def authenticate_flow(auth):
         print_error(f"Network Error: {e}")
 
 def main():
-    print(f"\n{Colors.CYAN}{Colors.BOLD}📱 Mobile MFA Client Simulator v2.0{Colors.ENDC}")
+    print(f"\n{Colors.CYAN}{Colors.BOLD}📱 Indigo MFA Client v1.0{Colors.ENDC}")
     user_id = input("Enter your User ID (email): ")
     try:
         auth = get_authenticator(user_id)

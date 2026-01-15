@@ -22,10 +22,10 @@ logging.basicConfig(
         logging.StreamHandler(sys.stdout)
     ]
 )
-logger = logging.getLogger("MFA_Backend")
+logger = logging.getLogger("Indigo_MFA_Backend")
 
 # Initialize Verifier SDK
-verifier = Verifier(verifier_id="Corporate-Backend")
+verifier = Verifier(verifier_id="Indigo-MFA-Backend")
 
 # Database Setup
 DB_PATH = os.path.join(os.path.dirname(__file__), 'mfa.db')
@@ -80,7 +80,7 @@ def log_and_record(event_type, user_id, status, details=""):
 
 @app.route('/')
 def home():
-    return "MFA Backend API is running. <a href='/dashboard'>View Dashboard</a>"
+    return "Indigo MFA Backend API is running. <a href='/dashboard'>View Dashboard</a>"
 
 @app.route('/register', methods=['POST'])
 def register():

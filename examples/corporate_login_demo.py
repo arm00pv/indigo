@@ -8,7 +8,7 @@ from mfa_sdk.authenticator import Authenticator
 from mfa_sdk.verifier import Verifier
 
 def run_corporate_login_demo():
-    print("=== Corporate Secure Login System Demo (Decentralized MFA SDK) ===\n")
+    print("=== Corporate Secure Login System Demo (Indigo MFA SDK) ===\n")
 
     # 1. System Initialization
     corporate_system = Verifier(verifier_id="Corp-SSO-System")
