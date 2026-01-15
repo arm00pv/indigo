@@ -5,31 +5,37 @@
 
 set -e
 
-# Configuration
-APP_DIR="/var/www/indigo-mfa"
+# Detect Script Location (Repo Root)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# Default Configuration
+APP_DIR="$REPO_ROOT"
 SERVICE_NAME="indigo-mfa"
-DOMAIN="localhost" # Change this to your domain
+DOMAIN="localhost"
 ADMIN_KEY="change-me-immediately"
 
 echo "=== Indigo MFA Installer ==="
+echo "Using Installation Directory: $APP_DIR"
 
 # 1. Install Dependencies
 echo "[1/6] Installing System Dependencies..."
 sudo apt-get update -qq
 sudo apt-get install -y python3 python3-pip python3-venv apache2 libapache2-mod-wsgi-py3 git
 
-# 2. Setup Project Directory
-echo "[2/6] Setting up Directory at $APP_DIR..."
-sudo mkdir -p $APP_DIR
-# Copy current directory contents to APP_DIR (Assuming script runs from repo root)
-# In a real one-click, this might git clone
-sudo cp -r . $APP_DIR
-sudo chown -R www-data:www-data $APP_DIR
+# 2. Permissions Setup
+echo "[2/6] Configuring Permissions for www-data..."
+# Instead of moving files, we grant ownership/access to the current directory
+sudo chown -R www-data:www-data "$APP_DIR"
+# Ensure the parent directory is executable so www-data can traverse (optional safety)
+# sudo chmod +x $(dirname "$APP_DIR")
 
 # 3. Setup Python Environment
 echo "[3/6] Setting up Python Virtualenv..."
-cd $APP_DIR
-sudo -u www-data python3 -m venv venv
+cd "$APP_DIR"
+if [ ! -d "venv" ]; then
+    sudo -u www-data python3 -m venv venv
+fi
 sudo -u www-data ./venv/bin/pip install -r requirements.txt
 
 # 4. Create Systemd Service (Gunicorn)
@@ -46,7 +52,8 @@ WorkingDirectory=$APP_DIR
 Environment="PATH=$APP_DIR/venv/bin"
 Environment="PYTHONPATH=$APP_DIR"
 Environment="ADMIN_API_KEY=$ADMIN_KEY"
-ExecStart=$APP_DIR/venv/bin/gunicorn --workers 3 --bind unix:indigo.sock -m 007 backend.app:app
+# Environment="ALERT_WEBHOOK_URL="
+ExecStart=$APP_DIR/venv/bin/gunicorn --workers 3 --bind unix:$APP_DIR/indigo.sock -m 007 backend.app:app
 
 [Install]
 WantedBy=multi-user.target
@@ -60,10 +67,15 @@ sudo systemctl restart $SERVICE_NAME
 echo "[5/6] Configuring Apache..."
 sudo a2enmod proxy proxy_http
 
-sudo tee /etc/apache2/sites-available/indigo.conf > /dev/null <<EOF
+# Define the VHost Block content
+VHOST_CONTENT="
+# --- Indigo MFA Configuration ---
 <VirtualHost *:80>
     ServerName $DOMAIN
+    # Uncomment if using subpath on existing domain
+    # ProxyPass /indigo unix:$APP_DIR/indigo.sock|http://127.0.0.1/
 
+    # Root Proxy
     ProxyPreserveHost On
     ProxyPass / unix:$APP_DIR/indigo.sock|http://127.0.0.1/
     ProxyPassReverse / unix:$APP_DIR/indigo.sock|http://127.0.0.1/
@@ -71,13 +83,37 @@ sudo tee /etc/apache2/sites-available/indigo.conf > /dev/null <<EOF
     ErrorLog \${APACHE_LOG_DIR}/indigo_error.log
     CustomLog \${APACHE_LOG_DIR}/indigo_access.log combined
 </VirtualHost>
-EOF
+# ------------------------------
+"
 
-sudo a2dissite 000-default.conf
-sudo a2ensite indigo.conf
+echo ""
+read -p "Enter path to existing Apache config to append to (Press Enter to create new /etc/apache2/sites-available/indigo.conf): " EXISTING_CONF
+
+if [ -z "$EXISTING_CONF" ]; then
+    # Create New File
+    TARGET_CONF="/etc/apache2/sites-available/indigo.conf"
+    echo "Creating new config at $TARGET_CONF"
+    echo "$VHOST_CONTENT" | sudo tee "$TARGET_CONF" > /dev/null
+
+    sudo a2dissite 000-default.conf || true
+    sudo a2ensite indigo.conf
+else
+    # Append to Existing
+    if [ -f "$EXISTING_CONF" ]; then
+        echo "Backing up $EXISTING_CONF to $EXISTING_CONF.bak"
+        sudo cp "$EXISTING_CONF" "$EXISTING_CONF.bak"
+
+        echo "Appending configuration to $EXISTING_CONF..."
+        echo "$VHOST_CONTENT" | sudo tee -a "$EXISTING_CONF" > /dev/null
+        echo "Success. Dependencies added to the end of $EXISTING_CONF."
+    else
+        echo "Error: File $EXISTING_CONF not found. Skipping Apache config."
+    fi
+fi
+
 sudo systemctl restart apache2
 
 echo "=== Installation Complete! ==="
 echo "Dashboard: http://$DOMAIN/dashboard"
 echo "Admin Key: $ADMIN_KEY"
-echo "Please secure your server and update the ADMIN_KEY in /etc/systemd/system/$SERVICE_NAME.service"
+echo "Please update the ADMIN_KEY in /etc/systemd/system/$SERVICE_NAME.service"
