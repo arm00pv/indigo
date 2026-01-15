@@ -4,3 +4,4 @@ __pycache__/
 *.pem
 device_pin.txt
 *.log
+device_duress.txt

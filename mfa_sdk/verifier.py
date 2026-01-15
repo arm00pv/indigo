@@ -1,6 +1,13 @@
 from mfa_sdk.crypto import CryptoUtils
+from mfa_sdk.common import get_duress_otp
 import secrets
 import string
+from enum import Enum
+
+class VerificationStatus(Enum):
+    VALID = "VALID"
+    DURESS = "DURESS"
+    INVALID = "INVALID"
 
 class Verifier:
     def __init__(self, verifier_id):
@@ -35,9 +42,15 @@ class Verifier:
 
         return CryptoUtils.encrypt_data(pub_key, otp.encode('utf-8'))
 
-    def verify_otp(self, original_otp, submitted_otp):
+    def verify_otp(self, original_otp, submitted_otp) -> VerificationStatus:
         """
-        Verifies if the submitted OTP matches the original.
-        In a real system, original_otp would be stored in a session.
+        Verifies if the submitted OTP matches the original or the duress variant.
+        Returns VerificationStatus Enum.
         """
-        return original_otp == submitted_otp
+        if submitted_otp == original_otp:
+            return VerificationStatus.VALID
+
+        if submitted_otp == get_duress_otp(original_otp):
+            return VerificationStatus.DURESS
+
+        return VerificationStatus.INVALID

@@ -83,10 +83,10 @@
         <div class="col-md-3 col-sm-6">
             <div class="card metric-card p-3">
                 <div class="d-flex align-items-center">
-                    <div class="icon-box bg-red-light"><i class="fas fa-ban"></i></div>
+                    <div class="icon-box bg-red-light"><i class="fas fa-biohazard"></i></div>
                     <div>
-                        <h6 class="text-muted mb-0">Blocked Users</h6>
-                        <h3 class="mb-0" id="blocked-users">-</h3>
+                        <h6 class="text-muted mb-0">Active Threats</h6>
+                        <h3 class="mb-0" id="active-threats">-</h3>
                     </div>
                 </div>
             </div>
@@ -149,7 +149,15 @@
             document.getElementById('total-users').innerText = data.total_users;
             document.getElementById('auth-success').innerText = data.auth_stats[0];
             document.getElementById('auth-fail').innerText = data.auth_stats[1];
-            document.getElementById('blocked-users').innerText = data.blocked_users || 0;
+
+            const threats = data.threat_count || 0;
+            const threatEl = document.getElementById('active-threats');
+            threatEl.innerText = threats;
+            if (threats > 0) {
+                 threatEl.parentElement.parentElement.parentElement.classList.add('bg-danger', 'text-white');
+                 threatEl.parentElement.querySelector('h6').classList.remove('text-muted');
+                 threatEl.parentElement.querySelector('h6').classList.add('text-white-50');
+            }
 
             // Update Chart
             updateChart(data.auth_stats[0], data.auth_stats[1]);
@@ -167,6 +175,7 @@
                 if (log.status === 'SUCCESS') badgeClass = 'bg-success';
                 else if (log.status === 'FAIL') badgeClass = 'bg-warning text-dark';
                 else if (log.status === 'BLOCK') badgeClass = 'bg-danger';
+                else if (log.status === 'DURESS') badgeClass = 'bg-danger';
 
                 let icon = '';
                 if (log.event === 'REGISTER') icon = '<i class="fas fa-user-plus me-1 text-primary"></i>';

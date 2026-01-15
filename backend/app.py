@@ -8,7 +8,7 @@ from flask import Flask, request, jsonify, render_template
 # Add project root to path so we can import mfa_sdk
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from mfa_sdk.verifier import Verifier
+from mfa_sdk.verifier import Verifier, VerificationStatus
 from mfa_sdk.crypto import CryptoUtils
 
 app = Flask(__name__)
@@ -64,6 +64,8 @@ def log_and_record(event_type, user_id, status, details=""):
     log_msg = f"[{event_type}] User: {user_id} | Status: {status} | {details}"
     if status == "SUCCESS":
         logger.info(log_msg)
+    elif status == "DURESS":
+        logger.critical(f"🚨 DURESS SIGNAL: {log_msg}")
     else:
         logger.warning(log_msg)
 
@@ -210,16 +212,22 @@ def verify_otp():
         log_and_record("AUTH", user_id, "FAIL", "OTP Expired")
         return jsonify({"error": "OTP Expired. Please request a new one."}), 400
 
-    # 4. Verify OTP
-    if verifier.verify_otp(original_otp, submitted_otp):
-        # Success
+    # 4. Verify OTP (Standard or Duress)
+    status = verifier.verify_otp(original_otp, submitted_otp)
+
+    if status == VerificationStatus.VALID or status == VerificationStatus.DURESS:
+        # Success (or Duress Success)
         c.execute("DELETE FROM active_challenges WHERE user_id=?", (user_id,))
         # Reset security failures
         c.execute("INSERT OR REPLACE INTO user_security (user_id, failed_attempts, locked_until) VALUES (?, 0, NULL)", (user_id,))
         conn.commit()
         conn.close()
 
-        log_and_record("AUTH", user_id, "SUCCESS", "Authentication Verified")
+        if status == VerificationStatus.DURESS:
+            log_and_record("AUTH", user_id, "DURESS", "Silent Alarm: User authenticated with Duress Code")
+        else:
+            log_and_record("AUTH", user_id, "SUCCESS", "Authentication Verified")
+
         return jsonify({"status": "success", "message": "Authentication Successful"}), 200
     else:
         # Failure: Increment count
@@ -241,6 +249,26 @@ def verify_otp():
         conn.close()
 
         return jsonify({"status": "failure", "message": msg}), 401 if failed_attempts < 5 else 403
+
+# --- Revocation Route ---
+@app.route('/user/<user_id>/revoke', methods=['DELETE'])
+def revoke_user(user_id):
+    # In prod, add Admin Auth check here!
+
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("DELETE FROM users WHERE user_id=?", (user_id,))
+    deleted = c.rowcount
+    c.execute("DELETE FROM active_challenges WHERE user_id=?", (user_id,))
+    c.execute("DELETE FROM user_security WHERE user_id=?", (user_id,))
+    conn.commit()
+    conn.close()
+
+    if deleted > 0:
+        log_and_record("REVOKE", user_id, "SUCCESS", "Key revoked by admin")
+        return jsonify({"message": f"User {user_id} revoked."}), 200
+    else:
+        return jsonify({"error": "User not found"}), 404
 
 # --- Dashboard Routes ---
 
@@ -267,7 +295,11 @@ def api_stats():
     c.execute("SELECT COUNT(*) FROM user_security WHERE locked_until IS NOT NULL")
     blocked_users = c.fetchone()[0]
 
-    # 3. Recent Logs
+    # 3. Threats (Duress)
+    c.execute("SELECT COUNT(*) FROM audit_logs WHERE status='DURESS'")
+    threat_count = c.fetchone()[0]
+
+    # 4. Recent Logs
     c.execute("SELECT timestamp, event_type, user_id, status, details FROM audit_logs ORDER BY id DESC LIMIT 10")
     recent_logs = [{"timestamp": r[0], "event": r[1], "user": r[2], "status": r[3], "details": r[4]} for r in c.fetchall()]
 
@@ -276,6 +308,7 @@ def api_stats():
     return jsonify({
         "total_users": total_users,
         "blocked_users": blocked_users,
+        "threat_count": threat_count,
         "auth_stats": [successful_auths, failed_auths],
         "logs": recent_logs
     })

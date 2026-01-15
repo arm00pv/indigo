@@ -51,11 +51,22 @@ def get_authenticator(user_id):
         from cryptography.hazmat.primitives import serialization
         auth._private_key = serialization.load_pem_private_key(priv_pem, password=None)
         auth._pin = pin
+
+        # Load duress pin if exists
+        if os.path.exists("device_duress.txt"):
+             with open("device_duress.txt", "r") as f:
+                auth._duress_pin = f.read().strip()
+
     else:
         from cryptography.hazmat.primitives import serialization
         print_info("No existing account found. Creating new...")
         pin = input(f"{Colors.BOLD}Set a 4-digit PIN for your vault: {Colors.ENDC}")
-        auth.setup_account(pin)
+
+        duress_pin = input(f"{Colors.BOLD}Set a 4-digit DURESS PIN (Optional, Press Enter to skip): {Colors.ENDC}")
+        if not duress_pin:
+             duress_pin = None
+
+        auth.setup_account(pin, duress_pin)
 
         priv_pem = auth._private_key.private_bytes(
             encoding=serialization.Encoding.PEM,
@@ -66,6 +77,10 @@ def get_authenticator(user_id):
             f.write(priv_pem)
         with open(PIN_FILE, "w") as f:
             f.write(pin)
+
+        if duress_pin:
+             with open("device_duress.txt", "w") as f:
+                  f.write(duress_pin)
 
     return auth
 
