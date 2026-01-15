@@ -109,6 +109,25 @@
 
         <!-- Logs -->
         <div class="col-lg-8 mb-4">
+            <!-- Abuse Monitor -->
+            <div class="card mb-4" id="abuse-card" style="display:none;">
+                <div class="card-header bg-danger text-white">
+                    <i class="fas fa-exclamation-circle me-2"></i>Abuse Monitor (Soft Locked Users)
+                </div>
+                <div class="card-body p-0">
+                    <table class="table table-hover mb-0">
+                        <thead class="bg-light">
+                            <tr>
+                                <th class="ps-4">User ID</th>
+                                <th>Reason</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="abuse-table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
             <div class="card h-100">
                 <div class="card-header bg-transparent d-flex justify-content-between align-items-center">
                     <span><i class="fas fa-list-alt me-2"></i>Audit Logs</span>
@@ -162,6 +181,25 @@
             // Update Chart
             updateChart(data.auth_stats[0], data.auth_stats[1]);
 
+            // Update Abuse Monitor
+            const abuseCard = document.getElementById('abuse-card');
+            const abuseBody = document.getElementById('abuse-table-body');
+            abuseBody.innerHTML = '';
+
+            if (data.soft_locked_users && data.soft_locked_users.length > 0) {
+                abuseCard.style.display = 'block';
+                data.soft_locked_users.forEach(user => {
+                    const row = `<tr>
+                        <td class="ps-4 fw-bold text-danger">${user.user_id}</td>
+                        <td>Failed Attempts: ${user.fails}</td>
+                        <td><button class="btn btn-sm btn-success" onclick="unlockUser('${user.user_id}')"><i class="fas fa-unlock me-1"></i> Unlock</button></td>
+                    </tr>`;
+                    abuseBody.innerHTML += row;
+                });
+            } else {
+                abuseCard.style.display = 'none';
+            }
+
             // Update Logs
             const logsBody = document.getElementById('logs-table-body');
             logsBody.innerHTML = '';
@@ -176,6 +214,7 @@
                 else if (log.status === 'FAIL') badgeClass = 'bg-warning text-dark';
                 else if (log.status === 'BLOCK') badgeClass = 'bg-danger';
                 else if (log.status === 'DURESS') badgeClass = 'bg-danger';
+                else if (log.status === 'ABUSE') badgeClass = 'bg-danger';
 
                 let icon = '';
                 if (log.event === 'REGISTER') icon = '<i class="fas fa-user-plus me-1 text-primary"></i>';
@@ -194,6 +233,16 @@
 
         } catch (error) {
             console.error('Error fetching stats:', error);
+        }
+    }
+
+    async function unlockUser(userId) {
+        if (!confirm(`Unlock user ${userId}?`)) return;
+        try {
+            await fetch(`/admin/user/${userId}/unlock`, { method: 'POST' });
+            fetchData();
+        } catch (e) {
+            alert("Error unlocking user");
         }
     }
 

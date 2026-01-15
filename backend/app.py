@@ -48,11 +48,19 @@ def init_db():
                   status TEXT,
                   details TEXT)''')
 
-    # Security Table (Rate Limiting)
+    # Security Table (Rate Limiting & Soft Lock)
+    # Adding lock_type column: 'NONE', 'TEMP', 'PERMANENT'
+    try:
+        c.execute("ALTER TABLE user_security ADD COLUMN lock_type TEXT DEFAULT 'NONE'")
+    except sqlite3.OperationalError:
+        # Ignore if column exists
+        pass
+
     c.execute('''CREATE TABLE IF NOT EXISTS user_security
                  (user_id TEXT PRIMARY KEY,
                   failed_attempts INTEGER DEFAULT 0,
-                  locked_until DATETIME)''')
+                  locked_until DATETIME,
+                  lock_type TEXT DEFAULT 'NONE')''')
     conn.commit()
     conn.close()
 
@@ -64,8 +72,8 @@ def log_and_record(event_type, user_id, status, details=""):
     log_msg = f"[{event_type}] User: {user_id} | Status: {status} | {details}"
     if status == "SUCCESS":
         logger.info(log_msg)
-    elif status == "DURESS":
-        logger.critical(f"🚨 DURESS SIGNAL: {log_msg}")
+    elif status == "DURESS" or status == "ABUSE":
+        logger.critical(f"🚨 {status} SIGNAL: {log_msg}")
     else:
         logger.warning(log_msg)
 
@@ -123,15 +131,24 @@ def get_challenge():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
-    # 1. Check if user is locked
-    c.execute("SELECT locked_until FROM user_security WHERE user_id=?", (user_id,))
+    # 1. Check if user is locked (Temp or Permanent)
+    c.execute("SELECT locked_until, lock_type FROM user_security WHERE user_id=?", (user_id,))
     row = c.fetchone()
-    if row and row[0]:
-        locked_until = datetime.datetime.fromisoformat(row[0])
-        if datetime.datetime.now() < locked_until:
+    if row:
+        locked_until = row[0]
+        lock_type = row[1]
+
+        if lock_type == 'PERMANENT':
             conn.close()
-            log_and_record("CHALLENGE", user_id, "BLOCK", "User Locked")
-            return jsonify({"error": "Account temporarily locked due to too many failed attempts."}), 403
+            log_and_record("CHALLENGE", user_id, "BLOCK", "User Soft Locked (Abuse)")
+            return jsonify({"error": "Device Soft Locked due to abuse. Contact Admin."}), 403
+
+        if locked_until:
+            locked_until_dt = datetime.datetime.fromisoformat(locked_until)
+            if datetime.datetime.now() < locked_until_dt:
+                conn.close()
+                log_and_record("CHALLENGE", user_id, "BLOCK", "User Locked")
+                return jsonify({"error": "Account temporarily locked due to too many failed attempts."}), 403
 
     # 2. Get Key
     c.execute("SELECT public_key_pem FROM users WHERE user_id=?", (user_id,))
@@ -173,15 +190,24 @@ def verify_otp():
     c = conn.cursor()
 
     # 1. Check Lock Status
-    c.execute("SELECT failed_attempts, locked_until FROM user_security WHERE user_id=?", (user_id,))
+    c.execute("SELECT failed_attempts, locked_until, lock_type FROM user_security WHERE user_id=?", (user_id,))
     sec_row = c.fetchone()
     if sec_row:
         failed_attempts = sec_row[0]
         locked_until = sec_row[1]
+        lock_type = sec_row[2]
     else:
         failed_attempts = 0
         locked_until = None
+        lock_type = 'NONE'
 
+    # Check Permanent Lock
+    if lock_type == 'PERMANENT':
+        conn.close()
+        log_and_record("AUTH", user_id, "BLOCK", "User Soft Locked (Abuse)")
+        return jsonify({"error": "Device Soft Locked due to abuse. Contact Admin."}), 403
+
+    # Check Temp Lock
     if locked_until:
         locked_until_dt = datetime.datetime.fromisoformat(locked_until)
         if datetime.datetime.now() < locked_until_dt:
@@ -189,10 +215,9 @@ def verify_otp():
             log_and_record("AUTH", user_id, "BLOCK", "User Locked")
             return jsonify({"error": "Account temporarily locked."}), 403
         else:
-            # Lock expired, reset
+            # Lock expired, reset stats for temp lock
             failed_attempts = 0
-            c.execute("UPDATE user_security SET locked_until=NULL, failed_attempts=0 WHERE user_id=?", (user_id,))
-            conn.commit()
+            # Note: We update DB later depending on success/fail
 
     # 2. Get Challenge
     c.execute("SELECT otp, created_at FROM active_challenges WHERE user_id=?", (user_id,))
@@ -218,8 +243,8 @@ def verify_otp():
     if status == VerificationStatus.VALID or status == VerificationStatus.DURESS:
         # Success (or Duress Success)
         c.execute("DELETE FROM active_challenges WHERE user_id=?", (user_id,))
-        # Reset security failures
-        c.execute("INSERT OR REPLACE INTO user_security (user_id, failed_attempts, locked_until) VALUES (?, 0, NULL)", (user_id,))
+        # Reset security failures and locks
+        c.execute("INSERT OR REPLACE INTO user_security (user_id, failed_attempts, locked_until, lock_type) VALUES (?, 0, NULL, 'NONE')", (user_id,))
         conn.commit()
         conn.close()
 
@@ -233,24 +258,58 @@ def verify_otp():
         # Failure: Increment count
         failed_attempts += 1
         new_locked_until = None
+        new_lock_type = 'NONE'
 
-        if failed_attempts >= 5:
-            # Lock for 15 mins
+        if failed_attempts >= 10:
+             # Permanent Soft Lock
+             new_lock_type = 'PERMANENT'
+             log_and_record("AUTH", user_id, "ABUSE", "Soft Lock Activated - Abuse Detected")
+             msg = "Device Soft Locked due to abuse. Contact Admin."
+             http_code = 403
+        elif failed_attempts >= 5:
+            # Temp Lock for 15 mins
             new_locked_until = (datetime.datetime.now() + datetime.timedelta(minutes=15)).isoformat()
+            new_lock_type = 'TEMP'
             log_and_record("AUTH", user_id, "BLOCK", "Too many failures - Account Locked")
             msg = "Too many failed attempts. Account locked for 15 minutes."
+            http_code = 403
         else:
-             log_and_record("AUTH", user_id, "FAIL", f"Invalid OTP (Attempt {failed_attempts}/5)")
+             log_and_record("AUTH", user_id, "FAIL", f"Invalid OTP (Attempt {failed_attempts}/10)")
              msg = "Invalid OTP"
+             http_code = 401
 
-        c.execute("INSERT OR REPLACE INTO user_security (user_id, failed_attempts, locked_until) VALUES (?, ?, ?)",
-                  (user_id, failed_attempts, new_locked_until))
+        c.execute("INSERT OR REPLACE INTO user_security (user_id, failed_attempts, locked_until, lock_type) VALUES (?, ?, ?, ?)",
+                  (user_id, failed_attempts, new_locked_until, new_lock_type))
         conn.commit()
         conn.close()
 
-        return jsonify({"status": "failure", "message": msg}), 401 if failed_attempts < 5 else 403
+        return jsonify({"status": "failure", "message": msg}), http_code
 
-# --- Revocation Route ---
+# --- Admin Routes ---
+@app.route('/admin/user/<user_id>/lock', methods=['POST'])
+def admin_lock_user(user_id):
+    # In prod, add Admin Auth check!
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("INSERT OR REPLACE INTO user_security (user_id, failed_attempts, locked_until, lock_type) VALUES (?, 0, NULL, 'PERMANENT')",
+              (user_id,))
+    conn.commit()
+    conn.close()
+    log_and_record("ADMIN", user_id, "BLOCK", "Admin manually locked user")
+    return jsonify({"message": f"User {user_id} soft locked."}), 200
+
+@app.route('/admin/user/<user_id>/unlock', methods=['POST'])
+def admin_unlock_user(user_id):
+    # In prod, add Admin Auth check!
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("INSERT OR REPLACE INTO user_security (user_id, failed_attempts, locked_until, lock_type) VALUES (?, 0, NULL, 'NONE')",
+              (user_id,))
+    conn.commit()
+    conn.close()
+    log_and_record("ADMIN", user_id, "SUCCESS", "Admin unlocked user")
+    return jsonify({"message": f"User {user_id} unlocked."}), 200
+
 @app.route('/user/<user_id>/revoke', methods=['DELETE'])
 def revoke_user(user_id):
     # In prod, add Admin Auth check here!
@@ -291,15 +350,25 @@ def api_stats():
     c.execute("SELECT COUNT(*) FROM audit_logs WHERE event_type='AUTH' AND status='FAIL'")
     failed_auths = c.fetchone()[0]
 
-    # 2. Blocked Users
-    c.execute("SELECT COUNT(*) FROM user_security WHERE locked_until IS NOT NULL")
-    blocked_users = c.fetchone()[0]
+    # 2. Blocked Users (Temp + Permanent)
+    try:
+        c.execute("SELECT COUNT(*) FROM user_security WHERE locked_until IS NOT NULL OR lock_type='PERMANENT'")
+        blocked_users = c.fetchone()[0]
+    except:
+        blocked_users = 0
 
-    # 3. Threats (Duress)
-    c.execute("SELECT COUNT(*) FROM audit_logs WHERE status='DURESS'")
+    # 3. Soft Locked Users (Abuse List)
+    try:
+        c.execute("SELECT user_id, failed_attempts FROM user_security WHERE lock_type='PERMANENT'")
+        soft_locked_list = [{"user_id": r[0], "fails": r[1]} for r in c.fetchall()]
+    except:
+        soft_locked_list = []
+
+    # 4. Threats (Duress + Abuse)
+    c.execute("SELECT COUNT(*) FROM audit_logs WHERE status='DURESS' OR status='ABUSE'")
     threat_count = c.fetchone()[0]
 
-    # 4. Recent Logs
+    # 5. Recent Logs
     c.execute("SELECT timestamp, event_type, user_id, status, details FROM audit_logs ORDER BY id DESC LIMIT 10")
     recent_logs = [{"timestamp": r[0], "event": r[1], "user": r[2], "status": r[3], "details": r[4]} for r in c.fetchall()]
 
@@ -310,7 +379,8 @@ def api_stats():
         "blocked_users": blocked_users,
         "threat_count": threat_count,
         "auth_stats": [successful_auths, failed_auths],
-        "logs": recent_logs
+        "logs": recent_logs,
+        "soft_locked_users": soft_locked_list
     })
 
 if __name__ == "__main__":
