@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  indigo-backend:
+    build: .
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./backend/mfa.db:/app/backend/mfa.db
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: always

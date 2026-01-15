@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: indigo-mfa-backend
+  labels:
+    app: indigo-mfa
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: indigo-mfa
+  template:
+    metadata:
+      labels:
+        app: indigo-mfa
+    spec:
+      containers:
+      - name: backend
+        image: indigo-mfa:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 5000
+        env:
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        # In production, use a persistent volume claim for SQLite or switch to PostgreSQL
+        volumeMounts:
+        - name: db-storage
+          mountPath: /app/backend
+      volumes:
+      - name: db-storage
+        emptyDir: {} # Temporary for PoC. Use PersistentVolumeClaim in Prod.
