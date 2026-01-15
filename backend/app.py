@@ -3,13 +3,16 @@ import os
 import sqlite3
 import logging
 import datetime
-from flask import Flask, request, jsonify, render_template
+import csv
+import io
+from flask import Flask, request, jsonify, render_template, Response
 
 # Add project root to path so we can import mfa_sdk
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from mfa_sdk.verifier import Verifier, VerificationStatus
 from mfa_sdk.crypto import CryptoUtils
+from backend.notifications import send_webhook_alert
 
 app = Flask(__name__)
 
@@ -40,20 +43,26 @@ def init_db():
                  (user_id TEXT PRIMARY KEY, otp TEXT, created_at DATETIME)''')
 
     # Audit Log Table
+    # Add IP Address column
+    try:
+        c.execute("ALTER TABLE audit_logs ADD COLUMN ip_address TEXT")
+    except sqlite3.OperationalError:
+        pass
+
     c.execute('''CREATE TABLE IF NOT EXISTS audit_logs
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                   event_type TEXT,
                   user_id TEXT,
                   status TEXT,
-                  details TEXT)''')
+                  details TEXT,
+                  ip_address TEXT)''')
 
     # Security Table (Rate Limiting & Soft Lock)
     # Adding lock_type column: 'NONE', 'TEMP', 'PERMANENT'
     try:
         c.execute("ALTER TABLE user_security ADD COLUMN lock_type TEXT DEFAULT 'NONE'")
     except sqlite3.OperationalError:
-        # Ignore if column exists
         pass
 
     c.execute('''CREATE TABLE IF NOT EXISTS user_security
@@ -67,13 +76,18 @@ def init_db():
 init_db()
 
 def log_and_record(event_type, user_id, status, details=""):
-    """Logs to file and records in DB for dashboard."""
+    """Logs to file, DB (with IP), and triggers Webhooks."""
+    # 0. Capture Context
+    ip_address = request.remote_addr if request else "unknown"
+
     # 1. File Log
-    log_msg = f"[{event_type}] User: {user_id} | Status: {status} | {details}"
+    log_msg = f"[{event_type}] User: {user_id} | IP: {ip_address} | Status: {status} | {details}"
     if status == "SUCCESS":
         logger.info(log_msg)
     elif status == "DURESS" or status == "ABUSE":
         logger.critical(f"🚨 {status} SIGNAL: {log_msg}")
+        # Trigger Webhook
+        send_webhook_alert(event_type, user_id, status, details)
     else:
         logger.warning(log_msg)
 
@@ -81,8 +95,8 @@ def log_and_record(event_type, user_id, status, details=""):
     try:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-        c.execute("INSERT INTO audit_logs (event_type, user_id, status, details) VALUES (?, ?, ?, ?)",
-                  (event_type, user_id, status, details))
+        c.execute("INSERT INTO audit_logs (event_type, user_id, status, details, ip_address) VALUES (?, ?, ?, ?, ?)",
+                  (event_type, user_id, status, details, ip_address))
         conn.commit()
         conn.close()
     except Exception as e:
@@ -310,6 +324,28 @@ def admin_unlock_user(user_id):
     log_and_record("ADMIN", user_id, "SUCCESS", "Admin unlocked user")
     return jsonify({"message": f"User {user_id} unlocked."}), 200
 
+@app.route('/admin/export/logs')
+def admin_export_logs():
+    # In prod, add Admin Auth check!
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT id, timestamp, event_type, user_id, ip_address, status, details FROM audit_logs ORDER BY id DESC")
+    rows = c.fetchall()
+    conn.close()
+
+    # Generate CSV
+    si = io.StringIO()
+    cw = csv.writer(si)
+    cw.writerow(['ID', 'Timestamp', 'Event', 'User', 'IP Address', 'Status', 'Details'])
+    cw.writerows(rows)
+    output = si.getvalue()
+
+    return Response(
+        output,
+        mimetype="text/csv",
+        headers={"Content-disposition": "attachment; filename=indigo_audit_logs.csv"}
+    )
+
 @app.route('/user/<user_id>/revoke', methods=['DELETE'])
 def revoke_user(user_id):
     # In prod, add Admin Auth check here!
@@ -368,9 +404,9 @@ def api_stats():
     c.execute("SELECT COUNT(*) FROM audit_logs WHERE status='DURESS' OR status='ABUSE'")
     threat_count = c.fetchone()[0]
 
-    # 5. Recent Logs
-    c.execute("SELECT timestamp, event_type, user_id, status, details FROM audit_logs ORDER BY id DESC LIMIT 10")
-    recent_logs = [{"timestamp": r[0], "event": r[1], "user": r[2], "status": r[3], "details": r[4]} for r in c.fetchall()]
+    # 5. Recent Logs (Include IP)
+    c.execute("SELECT timestamp, event_type, user_id, status, details, ip_address FROM audit_logs ORDER BY id DESC LIMIT 10")
+    recent_logs = [{"timestamp": r[0], "event": r[1], "user": r[2], "status": r[3], "details": r[4], "ip": r[5] or "unknown"} for r in c.fetchall()]
 
     conn.close()
 

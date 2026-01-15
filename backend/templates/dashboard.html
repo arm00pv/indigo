@@ -30,9 +30,12 @@
 <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4">
     <div class="container">
         <a class="navbar-brand" href="#"><i class="fas fa-shield-alt me-2"></i>Indigo MFA Admin</a>
-        <span class="navbar-text text-white">
-            <i class="fas fa-circle text-success small me-1"></i> System Online
-        </span>
+        <div class="d-flex">
+            <a href="/admin/export/logs" class="btn btn-light btn-sm me-3"><i class="fas fa-download me-1"></i> Export Logs (CSV)</a>
+            <span class="navbar-text text-white">
+                <i class="fas fa-circle text-success small me-1"></i> System Online
+            </span>
+        </div>
     </div>
 </nav>
 
@@ -141,6 +144,7 @@
                                     <th class="ps-4">Timestamp</th>
                                     <th>Event</th>
                                     <th>User</th>
+                                    <th>IP Address</th>
                                     <th>Status</th>
                                     <th>Details</th>
                                 </tr>
@@ -225,6 +229,7 @@
                     <td class="ps-4 text-muted small">${log.timestamp}</td>
                     <td>${icon} ${log.event}</td>
                     <td class="fw-bold">${log.user}</td>
+                    <td class="text-monospace small">${log.ip}</td>
                     <td><span class="badge status-badge ${badgeClass}">${log.status}</span></td>
                     <td class="text-muted small">${log.details}</td>
                 </tr>`;
