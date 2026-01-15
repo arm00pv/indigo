@@ -35,9 +35,11 @@ def init_db():
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS users
                  (user_id TEXT PRIMARY KEY, public_key_pem BLOB)''')
+    # Add created_at to active_challenges
     c.execute('''CREATE TABLE IF NOT EXISTS active_challenges
-                 (user_id TEXT PRIMARY KEY, otp TEXT)''')
-    # New Audit Log Table
+                 (user_id TEXT PRIMARY KEY, otp TEXT, created_at DATETIME)''')
+
+    # Audit Log Table
     c.execute('''CREATE TABLE IF NOT EXISTS audit_logs
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -45,6 +47,12 @@ def init_db():
                   user_id TEXT,
                   status TEXT,
                   details TEXT)''')
+
+    # Security Table (Rate Limiting)
+    c.execute('''CREATE TABLE IF NOT EXISTS user_security
+                 (user_id TEXT PRIMARY KEY,
+                  failed_attempts INTEGER DEFAULT 0,
+                  locked_until DATETIME)''')
     conn.commit()
     conn.close()
 
@@ -92,6 +100,8 @@ def register():
         c = conn.cursor()
         c.execute("INSERT OR REPLACE INTO users (user_id, public_key_pem) VALUES (?, ?)",
                   (user_id, public_key_pem))
+        # Reset security stats on new registration/update
+        c.execute("DELETE FROM user_security WHERE user_id=?", (user_id,))
         conn.commit()
         conn.close()
 
@@ -110,6 +120,18 @@ def get_challenge():
 
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
+
+    # 1. Check if user is locked
+    c.execute("SELECT locked_until FROM user_security WHERE user_id=?", (user_id,))
+    row = c.fetchone()
+    if row and row[0]:
+        locked_until = datetime.datetime.fromisoformat(row[0])
+        if datetime.datetime.now() < locked_until:
+            conn.close()
+            log_and_record("CHALLENGE", user_id, "BLOCK", "User Locked")
+            return jsonify({"error": "Account temporarily locked due to too many failed attempts."}), 403
+
+    # 2. Get Key
     c.execute("SELECT public_key_pem FROM users WHERE user_id=?", (user_id,))
     row = c.fetchone()
 
@@ -119,14 +141,14 @@ def get_challenge():
         return jsonify({"error": "User not found"}), 404
 
     public_key_pem = row[0]
-    conn.close()
 
     verifier.register_user(user_id, public_key_pem)
     otp = verifier.generate_otp()
 
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("INSERT OR REPLACE INTO active_challenges (user_id, otp) VALUES (?, ?)", (user_id, otp))
+    # 3. Store OTP with Timestamp
+    now = datetime.datetime.now().isoformat()
+    c.execute("INSERT OR REPLACE INTO active_challenges (user_id, otp, created_at) VALUES (?, ?, ?)",
+              (user_id, otp, now))
     conn.commit()
     conn.close()
 
@@ -147,28 +169,78 @@ def verify_otp():
 
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT otp FROM active_challenges WHERE user_id=?", (user_id,))
+
+    # 1. Check Lock Status
+    c.execute("SELECT failed_attempts, locked_until FROM user_security WHERE user_id=?", (user_id,))
+    sec_row = c.fetchone()
+    if sec_row:
+        failed_attempts = sec_row[0]
+        locked_until = sec_row[1]
+    else:
+        failed_attempts = 0
+        locked_until = None
+
+    if locked_until:
+        locked_until_dt = datetime.datetime.fromisoformat(locked_until)
+        if datetime.datetime.now() < locked_until_dt:
+            conn.close()
+            log_and_record("AUTH", user_id, "BLOCK", "User Locked")
+            return jsonify({"error": "Account temporarily locked."}), 403
+        else:
+            # Lock expired, reset
+            failed_attempts = 0
+            c.execute("UPDATE user_security SET locked_until=NULL, failed_attempts=0 WHERE user_id=?", (user_id,))
+            conn.commit()
+
+    # 2. Get Challenge
+    c.execute("SELECT otp, created_at FROM active_challenges WHERE user_id=?", (user_id,))
     row = c.fetchone()
-    conn.close()
 
     if not row:
+        conn.close()
         log_and_record("AUTH", user_id, "FAIL", "No active challenge")
         return jsonify({"error": "No active challenge found"}), 400
 
     original_otp = row[0]
+    created_at = datetime.datetime.fromisoformat(row[1]) if row[1] else datetime.datetime.now()
 
+    # 3. Check TTL (5 minutes)
+    if datetime.datetime.now() - created_at > datetime.timedelta(minutes=5):
+        conn.close()
+        log_and_record("AUTH", user_id, "FAIL", "OTP Expired")
+        return jsonify({"error": "OTP Expired. Please request a new one."}), 400
+
+    # 4. Verify OTP
     if verifier.verify_otp(original_otp, submitted_otp):
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
+        # Success
         c.execute("DELETE FROM active_challenges WHERE user_id=?", (user_id,))
+        # Reset security failures
+        c.execute("INSERT OR REPLACE INTO user_security (user_id, failed_attempts, locked_until) VALUES (?, 0, NULL)", (user_id,))
         conn.commit()
         conn.close()
 
         log_and_record("AUTH", user_id, "SUCCESS", "Authentication Verified")
         return jsonify({"status": "success", "message": "Authentication Successful"}), 200
     else:
-        log_and_record("AUTH", user_id, "FAIL", "Invalid OTP")
-        return jsonify({"status": "failure", "message": "Invalid OTP"}), 401
+        # Failure: Increment count
+        failed_attempts += 1
+        new_locked_until = None
+
+        if failed_attempts >= 5:
+            # Lock for 15 mins
+            new_locked_until = (datetime.datetime.now() + datetime.timedelta(minutes=15)).isoformat()
+            log_and_record("AUTH", user_id, "BLOCK", "Too many failures - Account Locked")
+            msg = "Too many failed attempts. Account locked for 15 minutes."
+        else:
+             log_and_record("AUTH", user_id, "FAIL", f"Invalid OTP (Attempt {failed_attempts}/5)")
+             msg = "Invalid OTP"
+
+        c.execute("INSERT OR REPLACE INTO user_security (user_id, failed_attempts, locked_until) VALUES (?, ?, ?)",
+                  (user_id, failed_attempts, new_locked_until))
+        conn.commit()
+        conn.close()
+
+        return jsonify({"status": "failure", "message": msg}), 401 if failed_attempts < 5 else 403
 
 # --- Dashboard Routes ---
 
@@ -191,7 +263,11 @@ def api_stats():
     c.execute("SELECT COUNT(*) FROM audit_logs WHERE event_type='AUTH' AND status='FAIL'")
     failed_auths = c.fetchone()[0]
 
-    # 2. Recent Logs
+    # 2. Blocked Users
+    c.execute("SELECT COUNT(*) FROM user_security WHERE locked_until IS NOT NULL")
+    blocked_users = c.fetchone()[0]
+
+    # 3. Recent Logs
     c.execute("SELECT timestamp, event_type, user_id, status, details FROM audit_logs ORDER BY id DESC LIMIT 10")
     recent_logs = [{"timestamp": r[0], "event": r[1], "user": r[2], "status": r[3], "details": r[4]} for r in c.fetchall()]
 
@@ -199,6 +275,7 @@ def api_stats():
 
     return jsonify({
         "total_users": total_users,
+        "blocked_users": blocked_users,
         "auth_stats": [successful_auths, failed_auths],
         "logs": recent_logs
     })

@@ -3,6 +3,7 @@ import os
 import requests
 import time
 import json
+import getpass
 
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -10,32 +11,52 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from mfa_sdk.authenticator import Authenticator
 from mfa_sdk.crypto import CryptoUtils
 
+# ANSI Colors
+class Colors:
+    HEADER = '\033[95m'
+    BLUE = '\033[94m'
+    CYAN = '\033[96m'
+    GREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+
 API_URL = "http://127.0.0.1:5000"
 KEY_FILE = "device_key.pem"
-PIN_FILE = "device_pin.txt" # Insecure for demo, in real mobile app use SecureStorage
+PIN_FILE = "device_pin.txt" # Insecure for demo
+
+def print_header(text):
+    print(f"\n{Colors.HEADER}{Colors.BOLD}=== {text} ==={Colors.ENDC}")
+
+def print_success(text):
+    print(f"{Colors.GREEN}✅ {text}{Colors.ENDC}")
+
+def print_error(text):
+    print(f"{Colors.FAIL}❌ {text}{Colors.ENDC}")
+
+def print_info(text):
+    print(f"{Colors.BLUE}ℹ️  {text}{Colors.ENDC}")
 
 def get_authenticator(user_id):
     auth = Authenticator(user_id)
 
-    # Load existing key if present
     if os.path.exists(KEY_FILE) and os.path.exists(PIN_FILE):
         with open(KEY_FILE, "rb") as f:
             priv_pem = f.read()
         with open(PIN_FILE, "r") as f:
             pin = f.read().strip()
 
-        # Manually load key into authenticator (Simulating secure load)
         from cryptography.hazmat.primitives import serialization
         auth._private_key = serialization.load_pem_private_key(priv_pem, password=None)
         auth._pin = pin
     else:
-        # Setup new
         from cryptography.hazmat.primitives import serialization
-        print("No existing account found. Creating new...")
-        pin = input("Set a 4-digit PIN: ")
+        print_info("No existing account found. Creating new...")
+        pin = input(f"{Colors.BOLD}Set a 4-digit PIN for your vault: {Colors.ENDC}")
         auth.setup_account(pin)
 
-        # Save key
         priv_pem = auth._private_key.private_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PrivateFormat.PKCS8,
@@ -49,7 +70,7 @@ def get_authenticator(user_id):
     return auth
 
 def register(auth):
-    print("\n--- Registration ---")
+    print_header("Registration")
     pub_key_pem = auth.get_public_key_pem()
     payload = {
         "user_id": auth.user_id,
@@ -57,68 +78,81 @@ def register(auth):
     }
 
     try:
+        print_info(f"Registering User: {auth.user_id}...")
         resp = requests.post(f"{API_URL}/register", json=payload)
         if resp.status_code in [200, 201]:
-            print(f"✅ Success: {resp.json()['message']}")
+            print_success(f"{resp.json()['message']}")
         else:
-            print(f"❌ Error: {resp.text}")
+            print_error(f"Error: {resp.text}")
     except Exception as e:
-        print(f"❌ Network Error: {e}")
+        print_error(f"Network Error: {e}")
 
 def authenticate_flow(auth):
-    print("\n--- Authentication ---")
+    print_header("Authentication")
 
-    # 1. Trigger Challenge (Usually triggered by Web, but here we trigger it to get the blob)
-    print("Requesting login challenge from server...")
+    print_info("Requesting login challenge from server...")
     try:
         resp = requests.post(f"{API_URL}/auth/challenge", json={"user_id": auth.user_id})
+
+        if resp.status_code == 403:
+            print_error(f"Access Denied: {resp.json().get('error')}")
+            return
+
         if resp.status_code != 200:
-            print(f"❌ Error getting challenge: {resp.text}")
+            print_error(f"Error getting challenge: {resp.text}")
             return
 
         data = resp.json()
         encrypted_hex = data["encrypted_challenge_hex"]
         encrypted_blob = bytes.fromhex(encrypted_hex)
-        print(f"📥 Received Encrypted Challenge ({len(encrypted_blob)} bytes)")
+        print_info(f"Received Encrypted Challenge ({len(encrypted_blob)} bytes)")
 
-        # 2. Decrypt
-        pin = input("Enter PIN to decrypt: ")
+        pin = input(f"{Colors.BOLD}Enter PIN to decrypt: {Colors.ENDC}")
         try:
             otp = auth.decrypt_otp(encrypted_blob, pin)
-            print(f"🔓 Decrypted OTP: {otp}")
+            print_success(f"Decrypted OTP: {Colors.BOLD}{otp}{Colors.ENDC}")
 
-            # 3. Submit (Simulating User typing it into the web portal)
-            print("Submitting OTP to server...")
+            print_info("Submitting OTP to server...")
             verify_resp = requests.post(f"{API_URL}/auth/verify", json={"user_id": auth.user_id, "otp": otp})
 
             if verify_resp.status_code == 200:
-                print("✅ Authentication Successful!")
+                print_success("Authentication Successful! Access Granted.")
+            elif verify_resp.status_code == 403:
+                print_error(f"Security Alert: {verify_resp.json().get('message')}")
             else:
-                print("❌ Authentication Failed!")
+                print_error(f"Authentication Failed: {verify_resp.json().get('message')}")
 
         except Exception as e:
-            print(f"❌ Decryption Failed: {e}")
+            print_error(f"Decryption Failed (Wrong PIN?): {e}")
 
     except Exception as e:
-        print(f"❌ Network Error: {e}")
+        print_error(f"Network Error: {e}")
 
 def main():
-    print("📱 Mobile MFA Client Simulator")
+    print(f"\n{Colors.CYAN}{Colors.BOLD}📱 Mobile MFA Client Simulator v2.0{Colors.ENDC}")
     user_id = input("Enter your User ID (email): ")
-    auth = get_authenticator(user_id)
+    try:
+        auth = get_authenticator(user_id)
+    except KeyboardInterrupt:
+        return
 
     while True:
-        print("\n1. Register with Server")
+        print(f"\n{Colors.HEADER}--- Menu ---{Colors.ENDC}")
+        print("1. Register with Server")
         print("2. Login (Receive & Decrypt Challenge)")
         print("3. Exit")
-        choice = input("Select: ")
+        choice = input(f"{Colors.BOLD}Select: {Colors.ENDC}")
 
         if choice == "1":
             register(auth)
         elif choice == "2":
             authenticate_flow(auth)
         elif choice == "3":
+            print("Bye!")
             break
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nExiting...")

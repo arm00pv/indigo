@@ -3,74 +3,134 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MFA Dashboard</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <title>MFA Secure Dashboard</title>
+    <!-- Bootswatch Cosmo Theme -->
+    <link href="https://cdn.jsdelivr.net/npm/bootswatch@5.3.0/dist/cosmo/bootstrap.min.css" rel="stylesheet">
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        body { background-color: #f8f9fa; }
-        .card-metric { text-align: center; padding: 20px; }
-        .metric-value { font-size: 2.5rem; font-weight: bold; }
-        .success { color: #198754; }
-        .fail { color: #dc3545; }
+        body { background-color: #f0f2f5; }
+        .navbar { box-shadow: 0 2px 4px rgba(0,0,0,.1); }
+        .card { border: none; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,.05); margin-bottom: 20px; }
+        .card-header { background-color: #fff; border-bottom: 1px solid #eee; font-weight: 600; border-radius: 12px 12px 0 0 !important; }
+        .metric-card { transition: transform 0.2s; }
+        .metric-card:hover { transform: translateY(-5px); }
+        .icon-box { width: 50px; height: 50px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; margin-right: 15px; }
+        .bg-blue-light { background-color: #e3f2fd; color: #0d6efd; }
+        .bg-green-light { background-color: #d1e7dd; color: #198754; }
+        .bg-red-light { background-color: #f8d7da; color: #dc3545; }
+        .bg-yellow-light { background-color: #fff3cd; color: #ffc107; }
+        .table th { font-weight: 600; color: #555; }
+        .status-badge { font-size: 0.85rem; padding: 5px 10px; border-radius: 20px; }
     </style>
 </head>
 <body>
 
-<nav class="navbar navbar-dark bg-dark">
-    <div class="container-fluid">
-        <span class="navbar-brand mb-0 h1">Decentralized MFA Monitor</span>
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4">
+    <div class="container">
+        <a class="navbar-brand" href="#"><i class="fas fa-shield-alt me-2"></i>SecureMFA Admin</a>
+        <span class="navbar-text text-white">
+            <i class="fas fa-circle text-success small me-1"></i> System Online
+        </span>
     </div>
 </nav>
 
-<div class="container mt-4">
-    <!-- Metrics Row -->
+<div class="container">
+    <!-- Header -->
     <div class="row mb-4">
-        <div class="col-md-4">
-            <div class="card card-metric shadow-sm">
-                <h5>Registered Users</h5>
-                <div class="metric-value text-primary" id="total-users">-</div>
+        <div class="col-12">
+            <h2 class="text-dark">Security Overview</h2>
+            <p class="text-muted">Real-time monitoring of authentication events and security threats.</p>
+        </div>
+    </div>
+
+    <!-- Metrics Row -->
+    <div class="row mb-2">
+        <div class="col-md-3 col-sm-6">
+            <div class="card metric-card p-3">
+                <div class="d-flex align-items-center">
+                    <div class="icon-box bg-blue-light"><i class="fas fa-users"></i></div>
+                    <div>
+                        <h6 class="text-muted mb-0">Total Users</h6>
+                        <h3 class="mb-0" id="total-users">-</h3>
+                    </div>
+                </div>
             </div>
         </div>
-        <div class="col-md-4">
-            <div class="card card-metric shadow-sm">
-                <h5>Auth Success</h5>
-                <div class="metric-value success" id="auth-success">-</div>
+        <div class="col-md-3 col-sm-6">
+            <div class="card metric-card p-3">
+                <div class="d-flex align-items-center">
+                    <div class="icon-box bg-green-light"><i class="fas fa-check-circle"></i></div>
+                    <div>
+                        <h6 class="text-muted mb-0">Auth Success</h6>
+                        <h3 class="mb-0" id="auth-success">-</h3>
+                    </div>
+                </div>
             </div>
         </div>
-        <div class="col-md-4">
-            <div class="card card-metric shadow-sm">
-                <h5>Auth Fails</h5>
-                <div class="metric-value fail" id="auth-fail">-</div>
+        <div class="col-md-3 col-sm-6">
+            <div class="card metric-card p-3">
+                <div class="d-flex align-items-center">
+                    <div class="icon-box bg-yellow-light"><i class="fas fa-exclamation-triangle"></i></div>
+                    <div>
+                        <h6 class="text-muted mb-0">Auth Failed</h6>
+                        <h3 class="mb-0" id="auth-fail">-</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6">
+            <div class="card metric-card p-3">
+                <div class="d-flex align-items-center">
+                    <div class="icon-box bg-red-light"><i class="fas fa-ban"></i></div>
+                    <div>
+                        <h6 class="text-muted mb-0">Blocked Users</h6>
+                        <h3 class="mb-0" id="blocked-users">-</h3>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- Chart & Logs Row -->
+    <!-- Main Content -->
     <div class="row">
-        <div class="col-md-6 mb-4">
-            <div class="card shadow-sm p-3">
-                <h5 class="card-title">Authentication Health</h5>
-                <canvas id="authChart"></canvas>
+        <!-- Chart -->
+        <div class="col-lg-4 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-transparent">
+                    <i class="fas fa-chart-pie me-2"></i>Auth Success Rate
+                </div>
+                <div class="card-body d-flex align-items-center justify-content-center">
+                    <canvas id="authChart" style="max-height: 250px;"></canvas>
+                </div>
             </div>
         </div>
-        <div class="col-md-6 mb-4">
-            <div class="card shadow-sm p-3">
-                <h5 class="card-title">Recent Activity Logs</h5>
-                <div class="table-responsive">
-                    <table class="table table-striped table-sm text-nowrap">
-                        <thead>
-                            <tr>
-                                <th>Time</th>
-                                <th>Event</th>
-                                <th>User</th>
-                                <th>Status</th>
-                                <th>Details</th>
-                            </tr>
-                        </thead>
-                        <tbody id="logs-table-body">
-                            <!-- Logs injected here -->
-                        </tbody>
-                    </table>
+
+        <!-- Logs -->
+        <div class="col-lg-8 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-transparent d-flex justify-content-between align-items-center">
+                    <span><i class="fas fa-list-alt me-2"></i>Audit Logs</span>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="fetchData()"><i class="fas fa-sync-alt"></i> Refresh</button>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="bg-light">
+                                <tr>
+                                    <th class="ps-4">Timestamp</th>
+                                    <th>Event</th>
+                                    <th>User</th>
+                                    <th>Status</th>
+                                    <th>Details</th>
+                                </tr>
+                            </thead>
+                            <tbody id="logs-table-body">
+                                <!-- Logs injected here -->
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
@@ -89,6 +149,7 @@
             document.getElementById('total-users').innerText = data.total_users;
             document.getElementById('auth-success').innerText = data.auth_stats[0];
             document.getElementById('auth-fail').innerText = data.auth_stats[1];
+            document.getElementById('blocked-users').innerText = data.blocked_users || 0;
 
             // Update Chart
             updateChart(data.auth_stats[0], data.auth_stats[1]);
@@ -96,13 +157,28 @@
             // Update Logs
             const logsBody = document.getElementById('logs-table-body');
             logsBody.innerHTML = '';
+
+            if (data.logs.length === 0) {
+                logsBody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-muted">No logs available</td></tr>';
+            }
+
             data.logs.forEach(log => {
+                let badgeClass = 'bg-secondary';
+                if (log.status === 'SUCCESS') badgeClass = 'bg-success';
+                else if (log.status === 'FAIL') badgeClass = 'bg-warning text-dark';
+                else if (log.status === 'BLOCK') badgeClass = 'bg-danger';
+
+                let icon = '';
+                if (log.event === 'REGISTER') icon = '<i class="fas fa-user-plus me-1 text-primary"></i>';
+                if (log.event === 'CHALLENGE') icon = '<i class="fas fa-key me-1 text-info"></i>';
+                if (log.event === 'AUTH') icon = '<i class="fas fa-fingerprint me-1 text-dark"></i>';
+
                 const row = `<tr>
-                    <td>${log.timestamp}</td>
-                    <td><span class="badge bg-secondary">${log.event}</span></td>
-                    <td>${log.user}</td>
-                    <td><span class="badge ${log.status === 'SUCCESS' ? 'bg-success' : 'bg-danger'}">${log.status}</span></td>
-                    <td>${log.details}</td>
+                    <td class="ps-4 text-muted small">${log.timestamp}</td>
+                    <td>${icon} ${log.event}</td>
+                    <td class="fw-bold">${log.user}</td>
+                    <td><span class="badge status-badge ${badgeClass}">${log.status}</span></td>
+                    <td class="text-muted small">${log.details}</td>
                 </tr>`;
                 logsBody.innerHTML += row;
             });
@@ -117,17 +193,25 @@
         if (authChartInstance) {
             authChartInstance.destroy();
         }
+
+        // If no data, show empty
+        if (success === 0 && fail === 0) {
+            // Optional: Handle empty state
+        }
+
         authChartInstance = new Chart(ctx, {
             type: 'doughnut',
             data: {
                 labels: ['Success', 'Fail'],
                 datasets: [{
                     data: [success, fail],
-                    backgroundColor: ['#198754', '#dc3545']
+                    backgroundColor: ['#198754', '#ffc107'],
+                    borderWidth: 0
                 }]
             },
             options: {
                 responsive: true,
+                maintainAspectRatio: false,
                 plugins: {
                     legend: { position: 'bottom' }
                 }
@@ -135,9 +219,9 @@
         });
     }
 
-    // Refresh every 5 seconds
+    // Refresh every 3 seconds
     fetchData();
-    setInterval(fetchData, 5000);
+    setInterval(fetchData, 3000);
 </script>
 
 </body>
