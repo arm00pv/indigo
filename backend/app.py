@@ -7,6 +7,7 @@ import csv
 import io
 import json
 import ipaddress
+import functools
 from flask import Flask, request, jsonify, render_template, Response
 
 # Add project root to path so we can import mfa_sdk
@@ -17,6 +18,9 @@ from mfa_sdk.crypto import CryptoUtils
 from backend.notifications import send_webhook_alert
 
 app = Flask(__name__)
+
+# --- Configuration ---
+ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY", "secret-admin-key")
 
 # --- Logging Setup ---
 logging.basicConfig(
@@ -81,6 +85,23 @@ def init_db():
     conn.close()
 
 init_db()
+
+# --- Decorators ---
+def require_admin(f):
+    @functools.wraps(f)
+    def decorated_function(*args, **kwargs):
+        # Check Header
+        key = request.headers.get('X-Admin-Key')
+        if key == ADMIN_API_KEY:
+            return f(*args, **kwargs)
+
+        # Fallback: Check query param (for CSV export convenience)
+        if request.args.get('key') == ADMIN_API_KEY:
+            return f(*args, **kwargs)
+
+        logger.warning(f"[AUTH] Admin access denied from {request.remote_addr}")
+        return jsonify({"error": "Unauthorized. Invalid Admin Key."}), 401
+    return decorated_function
 
 def log_and_record(event_type, user_id, status, details=""):
     """Logs to file, DB (with IP), and triggers Webhooks."""
@@ -338,6 +359,7 @@ def verify_otp():
 
 # --- Admin Routes ---
 @app.route('/admin/user/<user_id>/lock', methods=['POST'])
+@require_admin
 def admin_lock_user(user_id):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -349,6 +371,7 @@ def admin_lock_user(user_id):
     return jsonify({"message": f"User {user_id} soft locked."}), 200
 
 @app.route('/admin/user/<user_id>/unlock', methods=['POST'])
+@require_admin
 def admin_unlock_user(user_id):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -360,6 +383,7 @@ def admin_unlock_user(user_id):
     return jsonify({"message": f"User {user_id} unlocked."}), 200
 
 @app.route('/admin/export/logs')
+@require_admin
 def admin_export_logs():
     fmt = request.args.get('format', 'csv')
     filter_type = request.args.get('filter', 'all')
@@ -403,6 +427,7 @@ def admin_export_logs():
 
 # --- Policy Management Routes ---
 @app.route('/admin/settings', methods=['GET', 'POST'])
+@require_admin
 def admin_settings():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -421,6 +446,7 @@ def admin_settings():
         return jsonify(settings)
 
 @app.route('/admin/policy/blacklist', methods=['GET', 'POST', 'DELETE'])
+@require_admin
 def admin_blacklist():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -458,7 +484,42 @@ def admin_blacklist():
     else:
         return jsonify({"message": msg, "blacklist": blacklist}), code
 
+@app.route('/admin/users', methods=['GET'])
+@require_admin
+def admin_users():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+
+    # Left Join with Security stats
+    c.execute("""
+        SELECT u.user_id, s.failed_attempts, s.locked_until, s.lock_type
+        FROM users u
+        LEFT JOIN user_security s ON u.user_id = s.user_id
+    """)
+    rows = c.fetchall()
+    conn.close()
+
+    users = []
+    for r in rows:
+        status = "Active"
+        if r['lock_type'] == 'PERMANENT':
+            status = "Soft Locked"
+        elif r['locked_until']:
+             dt = datetime.datetime.fromisoformat(r['locked_until'])
+             if datetime.datetime.now() < dt:
+                 status = "Temp Locked"
+
+        users.append({
+            "user_id": r['user_id'],
+            "status": status,
+            "failed_attempts": r['failed_attempts'] or 0
+        })
+
+    return jsonify(users)
+
 @app.route('/user/<user_id>/revoke', methods=['DELETE'])
+@require_admin
 def revoke_user(user_id):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
