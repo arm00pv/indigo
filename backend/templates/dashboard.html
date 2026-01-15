@@ -171,6 +171,27 @@
                 </div>
             </div>
 
+            <!-- Policy Monitor -->
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                    <span><i class="fas fa-gavel me-2"></i>Security Policies</span>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="toggle-biz-hours" onchange="toggleBizHours(this)">
+                        <label class="form-check-label text-white" for="toggle-biz-hours">Enforce Business Hours</label>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <h6 class="card-subtitle mb-2 text-muted">Active IP Blocklist</h6>
+                    <div class="input-group mb-3">
+                        <input type="text" class="form-control" id="block-ip-input" placeholder="Enter IP or CIDR (e.g. 192.168.1.5)">
+                        <button class="btn btn-outline-danger" type="button" onclick="blockIP()">Block</button>
+                    </div>
+                    <div id="blacklist-badges">
+                        <!-- Badges injected here -->
+                    </div>
+                </div>
+            </div>
+
             <div class="card h-100">
                 <div class="card-header bg-transparent d-flex justify-content-between align-items-center">
                     <span><i class="fas fa-list-alt me-2"></i>Audit Logs</span>
@@ -228,6 +249,22 @@
             updateAuthChart(data.auth_stats[0], data.auth_stats[1]);
             updateActivityChart(data.activity_over_time);
             updateFailureChart(data.failure_breakdown);
+
+            // Update Policy Status
+            if (data.policies) {
+                document.getElementById('toggle-biz-hours').checked = data.policies.business_hours_enabled;
+                const blacklistContainer = document.getElementById('blacklist-badges');
+                blacklistContainer.innerHTML = '';
+                if (data.policies.blacklist.length === 0) {
+                    blacklistContainer.innerHTML = '<span class="text-muted small">No active blocks</span>';
+                } else {
+                    data.policies.blacklist.forEach(item => {
+                        const badge = `<span class="badge bg-dark me-2 mb-1">${item.cidr}
+                            <i class="fas fa-times ms-1" style="cursor:pointer;" onclick="unblockIP('${item.cidr}')"></i></span>`;
+                        blacklistContainer.innerHTML += badge;
+                    });
+                }
+            }
 
             // Update Abuse Monitor
             const abuseCard = document.getElementById('abuse-card');
@@ -293,6 +330,44 @@
         } catch (e) {
             alert("Error unlocking user");
         }
+    }
+
+    async function toggleBizHours(el) {
+        try {
+            await fetch('/admin/settings', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({business_hours_enabled: el.checked})
+            });
+            fetchData();
+        } catch(e) { console.error(e); }
+    }
+
+    async function blockIP() {
+        const input = document.getElementById('block-ip-input');
+        const cidr = input.value;
+        if (!cidr) return;
+        try {
+            await fetch('/admin/policy/blacklist', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({cidr: cidr})
+            });
+            input.value = '';
+            fetchData();
+        } catch(e) { alert("Error blocking IP"); }
+    }
+
+    async function unblockIP(cidr) {
+        if(!confirm(`Unblock ${cidr}?`)) return;
+        try {
+            await fetch('/admin/policy/blacklist', {
+                method: 'DELETE',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({cidr: cidr})
+            });
+            fetchData();
+        } catch(e) { alert("Error unblocking IP"); }
     }
 
     function updateAuthChart(success, fail) {

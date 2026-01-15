@@ -6,6 +6,7 @@ import datetime
 import csv
 import io
 import json
+import ipaddress
 from flask import Flask, request, jsonify, render_template, Response
 
 # Add project root to path so we can import mfa_sdk
@@ -68,6 +69,14 @@ def init_db():
                   failed_attempts INTEGER DEFAULT 0,
                   locked_until DATETIME,
                   lock_type TEXT DEFAULT 'NONE')''')
+
+    # Policy Tables
+    c.execute('''CREATE TABLE IF NOT EXISTS system_settings
+                 (key TEXT PRIMARY KEY, value TEXT)''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS ip_blacklist
+                 (cidr TEXT PRIMARY KEY, reason TEXT, created_at DATETIME)''')
+
     conn.commit()
     conn.close()
 
@@ -96,6 +105,40 @@ def log_and_record(event_type, user_id, status, details=""):
     except Exception as e:
         logger.error(f"Failed to write to audit log: {e}")
 
+def check_policy_compliance(ip_addr):
+    """
+    Checks if the request complies with active security policies.
+    Returns (True, None) if allowed, (False, Reason) if blocked.
+    """
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+
+    # 1. IP Blacklist Check
+    c.execute("SELECT cidr, reason FROM ip_blacklist")
+    blacklist = c.fetchall()
+
+    req_ip = ipaddress.ip_address(ip_addr)
+    for cidr, reason in blacklist:
+        try:
+            if req_ip in ipaddress.ip_network(cidr):
+                conn.close()
+                return False, f"IP Blacklisted: {reason}"
+        except ValueError:
+            continue # Invalid CIDR in DB
+
+    # 2. Business Hours Check (Time Fencing)
+    c.execute("SELECT value FROM system_settings WHERE key='business_hours_enabled'")
+    row = c.fetchone()
+    if row and row[0] == 'true':
+        current_hour = datetime.datetime.now().hour
+        # Default: 08:00 to 18:00 (6 PM)
+        if current_hour < 8 or current_hour >= 18:
+            conn.close()
+            return False, "Access denied outside business hours (08:00 - 18:00)"
+
+    conn.close()
+    return True, None
+
 @app.route('/')
 def home():
     return "Indigo MFA Backend API is running. <a href='/dashboard'>View Dashboard</a>"
@@ -105,6 +148,12 @@ def register():
     data = request.json
     user_id = data.get('user_id')
     public_key_pem_hex = data.get('public_key_pem_hex')
+
+    # Policy Check
+    allowed, reason = check_policy_compliance(request.remote_addr)
+    if not allowed:
+        log_and_record("REGISTER", user_id or "unknown", "BLOCK", reason)
+        return jsonify({"error": reason}), 403
 
     if not user_id or not public_key_pem_hex:
         log_and_record("REGISTER", "unknown", "FAIL", "Missing data")
@@ -133,6 +182,12 @@ def register():
 def get_challenge():
     data = request.json
     user_id = data.get('user_id')
+
+    # Policy Check
+    allowed, reason = check_policy_compliance(request.remote_addr)
+    if not allowed:
+        log_and_record("CHALLENGE", user_id, "BLOCK", reason)
+        return jsonify({"error": reason}), 403
 
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -187,6 +242,13 @@ def verify_otp():
     data = request.json
     user_id = data.get('user_id')
     submitted_otp = data.get('otp')
+
+    # Note: We usually don't block Verify based on Policy (if Challenge passed),
+    # but strictly speaking we should check every request.
+    allowed, reason = check_policy_compliance(request.remote_addr)
+    if not allowed:
+        log_and_record("AUTH", user_id, "BLOCK", reason)
+        return jsonify({"error": reason}), 403
 
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -274,6 +336,7 @@ def verify_otp():
 
         return jsonify({"status": "failure", "message": msg}), http_code
 
+# --- Admin Routes ---
 @app.route('/admin/user/<user_id>/lock', methods=['POST'])
 def admin_lock_user(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -338,6 +401,63 @@ def admin_export_logs():
             headers={"Content-disposition": f"attachment; filename={filename}"}
         )
 
+# --- Policy Management Routes ---
+@app.route('/admin/settings', methods=['GET', 'POST'])
+def admin_settings():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+
+    if request.method == 'POST':
+        data = request.json
+        for key, val in data.items():
+            c.execute("INSERT OR REPLACE INTO system_settings (key, value) VALUES (?, ?)", (key, str(val)))
+        conn.commit()
+        conn.close()
+        return jsonify({"message": "Settings updated"}), 200
+    else:
+        c.execute("SELECT key, value FROM system_settings")
+        settings = {row[0]: row[1] for row in c.fetchall()}
+        conn.close()
+        return jsonify(settings)
+
+@app.route('/admin/policy/blacklist', methods=['GET', 'POST', 'DELETE'])
+def admin_blacklist():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+
+    if request.method == 'POST':
+        data = request.json
+        cidr = data.get('cidr')
+        reason = data.get('reason', 'Manually Blocked')
+        try:
+            ipaddress.ip_network(cidr) # Validate CIDR
+            now = datetime.datetime.now().isoformat()
+            c.execute("INSERT OR REPLACE INTO ip_blacklist (cidr, reason, created_at) VALUES (?, ?, ?)",
+                      (cidr, reason, now))
+            conn.commit()
+            msg = "IP Blocked"
+            code = 201
+        except ValueError:
+            msg = "Invalid CIDR format"
+            code = 400
+
+    elif request.method == 'DELETE':
+        data = request.json
+        cidr = data.get('cidr')
+        c.execute("DELETE FROM ip_blacklist WHERE cidr=?", (cidr,))
+        conn.commit()
+        msg = "IP Unblocked"
+        code = 200
+
+    c.execute("SELECT cidr, reason, created_at FROM ip_blacklist ORDER BY created_at DESC")
+    blacklist = [{"cidr": r[0], "reason": r[1], "created_at": r[2]} for r in c.fetchall()]
+    conn.close()
+
+    if request.method == 'GET':
+        return jsonify(blacklist)
+    else:
+        return jsonify({"message": msg, "blacklist": blacklist}), code
+
 @app.route('/user/<user_id>/revoke', methods=['DELETE'])
 def revoke_user(user_id):
     conn = sqlite3.connect(DB_PATH)
@@ -397,7 +517,6 @@ def api_stats():
     # --- Advanced Metrics ---
 
     # 6. Hourly Activity (Last 24h)
-    # Using SQLite strftime to group by Hour (YYYY-MM-DD HH)
     one_day_ago = (datetime.datetime.now() - datetime.timedelta(hours=24)).isoformat()
     c.execute("""
         SELECT strftime('%Y-%m-%d %H:00', timestamp) as hour, COUNT(*)
@@ -417,7 +536,6 @@ def api_stats():
         ORDER BY COUNT(*) DESC
         LIMIT 5
     """)
-    # Simplify details to avoid long labels (e.g., "Invalid OTP..." -> "Invalid OTP")
     failure_data = []
     for r in c.fetchall():
         label = r[0]
@@ -425,6 +543,14 @@ def api_stats():
         elif "Expired" in label: label = "OTP Expired"
         elif "Locked" in label: label = "Account Locked"
         failure_data.append({"label": label, "count": r[1]})
+
+    # 8. Policy Status
+    c.execute("SELECT value FROM system_settings WHERE key='business_hours_enabled'")
+    row = c.fetchone()
+    biz_hours = row[0] == 'true' if row else False
+
+    c.execute("SELECT cidr, reason FROM ip_blacklist")
+    blacklist = [{"cidr": r[0], "reason": r[1]} for r in c.fetchall()]
 
     conn.close()
 
@@ -436,7 +562,11 @@ def api_stats():
         "logs": recent_logs,
         "soft_locked_users": soft_locked_list,
         "activity_over_time": activity_data,
-        "failure_breakdown": failure_data
+        "failure_breakdown": failure_data,
+        "policies": {
+            "business_hours_enabled": biz_hours,
+            "blacklist": blacklist
+        }
     })
 
 if __name__ == "__main__":
