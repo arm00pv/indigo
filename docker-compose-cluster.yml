@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  db_primary:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: indigo
+      POSTGRES_PASSWORD: securepassword
+      POSTGRES_DB: indigo_mfa
+    volumes:
+      - db_primary_data:/var/lib/postgresql/data
+      - ./postgres/primary_init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U indigo"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  db_replica:
+    image: postgres:15-alpine
+    environment:
+      PGPASSWORD: replicator_password
+    command: ["/bin/bash", "/docker-entrypoint-initdb.d/replica_init.sh"]
+    volumes:
+      - db_replica_data:/var/lib/postgresql/data
+      - ./postgres/replica_init.sh:/docker-entrypoint-initdb.d/replica_init.sh
+    depends_on:
+      db_primary:
+        condition: service_healthy
+
+  app:
+    build: .
+    environment:
+      - DATABASE_URL=postgresql://indigo:securepassword@db_primary:5432/indigo_mfa
+      - MASTER_KEY=master-secret-key
+      # - ALERT_WEBHOOK_URL=...
+    depends_on:
+      db_primary:
+        condition: service_healthy
+    deploy:
+      replicas: 3
+    restart: always
+
+  nginx:
+    image: nginx:alpine
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "80:80"
+    depends_on:
+      - app
+
+volumes:
+  db_primary_data:
+  db_replica_data:

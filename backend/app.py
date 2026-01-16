@@ -7,8 +7,9 @@ import io
 import json
 import ipaddress
 import functools
-from flask import Flask, request, jsonify, render_template, Response
-from backend.models import db, User, ActiveChallenge, AuditLog, UserSecurity, SystemSetting, IPBlacklist
+import hashlib
+from flask import Flask, request, jsonify, render_template, Response, g
+from backend.models import db, User, ActiveChallenge, AuditLog, UserSecurity, SystemSetting, IPBlacklist, Tenant, ApiKey
 
 # Add project root to path so we can import mfa_sdk
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -20,8 +21,10 @@ from backend.notifications import send_webhook_alert
 app = Flask(__name__)
 
 # --- Configuration ---
-ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY", "secret-admin-key")
-# Default to SQLite if not provided, for backward compatibility
+# MASTER_KEY is for System Admins to create Tenants
+MASTER_KEY = os.environ.get("MASTER_KEY", "master-secret-key")
+
+# Default to SQLite if not provided
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', f"sqlite:///{os.path.join(os.path.dirname(__file__), 'mfa.db')}")
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -38,7 +41,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("Indigo_MFA_Backend")
 
-# Initialize Verifier SDK (Stateless logic mostly, but we need to ensure keys are loaded when needed)
+# Initialize Verifier SDK
 verifier = Verifier(verifier_id="Indigo-MFA-Backend")
 
 # --- Helper Functions ---
@@ -47,41 +50,115 @@ def init_db_data():
     """Initialize DB tables if not exist."""
     with app.app_context():
         db.create_all()
-        # Seed default settings if needed
-        if not SystemSetting.query.filter_by(key='business_hours_enabled').first():
-            db.session.add(SystemSetting(key='business_hours_enabled', value='false'))
+        # Ensure Default Tenant exists for backward compatibility or initial setup
+        if not Tenant.query.filter_by(name="Default Organization").first():
+            default_tenant = Tenant(id="default", name="Default Organization")
+            db.session.add(default_tenant)
+
+            # Create a default API Key for it (hashed)
+            # For "secret-admin-key", the hash is:
+            k = "secret-admin-key"
+            h = hashlib.sha256(k.encode()).hexdigest()
+            db.session.add(ApiKey(key_hash=h, tenant_id="default"))
+
+            # Default Settings
+            db.session.add(SystemSetting(key='business_hours_enabled', value='false', tenant_id="default"))
             db.session.commit()
 
 # Call init on startup
 init_db_data()
 
-# --- Decorators ---
+# --- Decorators & Middleware ---
+
+def hash_key(key):
+    return hashlib.sha256(key.encode()).hexdigest()
+
+def get_tenant_from_key(key):
+    """Resolves Tenant ID from API Key."""
+    h = hash_key(key)
+    api_key = ApiKey.query.get(h)
+    if api_key:
+        return api_key.tenant_id
+    return None
+
+def authenticate_request():
+    """
+    Middleware logic to set g.tenant_id.
+    Checks X-Admin-Key (Tenant Admin) or X-Master-Key (SysAdmin).
+    For End-User endpoints (Auth/Register), we assume the Client sends the Tenant ID or uses a specific URL structure?
+    Actually, for a SaaS, the Client usually sends a Publishable Key or Client ID.
+    For simplicity in this update, we will assume the Client sends 'X-Tenant-ID'
+    OR we rely on the Admin Key for management.
+
+    Wait, the Mobile App doesn't have an Admin Key.
+    How does the Mobile App identify which Tenant it belongs to?
+    Usually via the User ID (email domain?) or a Client ID passed during registration.
+    Let's add 'X-Tenant-ID' header requirement for Client endpoints, defaulting to 'default'.
+    """
+
+    # 1. Master Key (SysAdmin)
+    master_key = request.headers.get('X-Master-Key')
+    if master_key == MASTER_KEY:
+        g.is_master = True
+        g.tenant_id = None # Master operates globally or specifies tenant in payload
+        return
+
+    # 2. Admin Key (Tenant Admin)
+    admin_key = request.headers.get('X-Admin-Key') or request.args.get('key')
+    if admin_key:
+        tenant_id = get_tenant_from_key(admin_key)
+        if tenant_id:
+            g.tenant_id = tenant_id
+            g.is_admin = True
+            return
+
+    # 3. Client Requests (Register/Auth)
+    # We allow them but they must specify target Tenant, or we fallback to default.
+    # In a real app, this would be a Publishable Key.
+    g.tenant_id = request.headers.get('X-Tenant-ID', 'default')
+    g.is_admin = False
+
+@app.before_request
+def before_request():
+    authenticate_request()
+
+def require_sysadmin(f):
+    @functools.wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not getattr(g, 'is_master', False):
+             return jsonify({"error": "Unauthorized. System Admin required."}), 401
+        return f(*args, **kwargs)
+    return decorated_function
+
 def require_admin(f):
     @functools.wraps(f)
     def decorated_function(*args, **kwargs):
-        key = request.headers.get('X-Admin-Key')
-        if key == ADMIN_API_KEY:
+        if getattr(g, 'is_master', False):
             return f(*args, **kwargs)
-        if request.args.get('key') == ADMIN_API_KEY:
+        if getattr(g, 'is_admin', False) and g.tenant_id:
             return f(*args, **kwargs)
+
         logger.warning(f"[AUTH] Admin access denied from {request.remote_addr}")
         return jsonify({"error": "Unauthorized. Invalid Admin Key."}), 401
     return decorated_function
 
 def log_and_record(event_type, user_id, status, details=""):
     ip_address = request.remote_addr if request else "unknown"
-    log_msg = f"[{event_type}] User: {user_id} | IP: {ip_address} | Status: {status} | {details}"
+    tenant_id = getattr(g, 'tenant_id', 'unknown')
+
+    log_msg = f"[{event_type}] Tenant: {tenant_id} | User: {user_id} | IP: {ip_address} | Status: {status} | {details}"
 
     if status == "SUCCESS":
         logger.info(log_msg)
     elif status == "DURESS" or status == "ABUSE":
         logger.critical(f"🚨 {status} SIGNAL: {log_msg}")
-        send_webhook_alert(event_type, user_id, status, details)
+        send_webhook_alert(event_type, user_id, status, details) # Pass Tenant ID to webhook later
     else:
         logger.warning(log_msg)
 
     try:
         log_entry = AuditLog(
+            tenant_id=tenant_id,
             event_type=event_type,
             user_id=user_id,
             status=status,
@@ -97,8 +174,8 @@ def log_and_record(event_type, user_id, status, details=""):
 
 def check_policy_compliance(ip_addr):
     try:
-        # 1. IP Blacklist Check
-        blacklist = IPBlacklist.query.all()
+        # 1. IP Blacklist Check (Scoped to Tenant)
+        blacklist = IPBlacklist.query.filter_by(tenant_id=g.tenant_id).all()
         req_ip = ipaddress.ip_address(ip_addr)
 
         for entry in blacklist:
@@ -108,8 +185,8 @@ def check_policy_compliance(ip_addr):
             except ValueError:
                 continue
 
-        # 2. Business Hours Check
-        setting = SystemSetting.query.filter_by(key='business_hours_enabled').first()
+        # 2. Business Hours Check (Scoped to Tenant)
+        setting = SystemSetting.query.filter_by(key='business_hours_enabled', tenant_id=g.tenant_id).first()
         if setting and setting.value == 'true':
             current_hour = datetime.datetime.now().hour
             if current_hour < 8 or current_hour >= 18:
@@ -118,22 +195,39 @@ def check_policy_compliance(ip_addr):
         return True, None
     except Exception as e:
         logger.error(f"Policy check error: {e}")
-        return True, None # Fail open or closed? Let's fail open to avoid outage on DB error for now
+        return True, None
 
-# --- Routes ---
+# --- SysAdmin Routes (Multi-Tenancy Provisioning) ---
 
-@app.route('/')
-def home():
-    return "Indigo MFA Backend API is running. <a href='/dashboard'>View Dashboard</a>"
+@app.route('/sys/tenants', methods=['POST'])
+@require_sysadmin
+def create_tenant():
+    name = request.json.get('name')
+    if not name: return jsonify({"error": "Missing name"}), 400
 
-@app.route('/health')
-def health():
-    try:
-        # Simple DB check
-        db.session.execute(db.text("SELECT 1"))
-        return jsonify({"status": "healthy"}), 200
-    except Exception as e:
-        return jsonify({"status": "unhealthy", "error": str(e)}), 500
+    tenant = Tenant(name=name)
+    db.session.add(tenant)
+    db.session.commit()
+    return jsonify({"message": "Tenant created", "id": tenant.id}), 201
+
+@app.route('/sys/keys', methods=['POST'])
+@require_sysadmin
+def create_api_key():
+    tenant_id = request.json.get('tenant_id')
+    raw_key = request.json.get('key') # Sysadmin provides the key secret, or we generate it
+
+    if not tenant_id or not raw_key:
+        return jsonify({"error": "Missing tenant_id or key"}), 400
+
+    h = hash_key(raw_key)
+    if ApiKey.query.get(h):
+        return jsonify({"error": "Key already exists"}), 400
+
+    db.session.add(ApiKey(key_hash=h, tenant_id=tenant_id))
+    db.session.commit()
+    return jsonify({"message": "Key registered for tenant"}), 201
+
+# --- User Routes (Tenant Scoped) ---
 
 @app.route('/register', methods=['POST'])
 def register():
@@ -154,19 +248,19 @@ def register():
         public_key_pem = bytes.fromhex(public_key_pem_hex)
         CryptoUtils.load_public_key(public_key_pem)
 
-        # Save User
-        user = User.query.get(user_id)
+        # Save User (Composite PK)
+        user = User.query.get((user_id, g.tenant_id))
         if not user:
-            user = User(user_id=user_id, public_key_pem=public_key_pem)
+            user = User(user_id=user_id, tenant_id=g.tenant_id, public_key_pem=public_key_pem)
             db.session.add(user)
         else:
             user.public_key_pem = public_key_pem
 
         # Clear security stats
-        UserSecurity.query.filter_by(user_id=user_id).delete()
+        UserSecurity.query.filter_by(user_id=user_id, tenant_id=g.tenant_id).delete()
 
         db.session.commit()
-        verifier.register_user(user_id, public_key_pem) # Update in-memory if needed
+        verifier.register_user(user_id, public_key_pem) # Note: Verifier object assumes global uniqueness in RAM logic, but we only use it for crypto ops.
 
         log_and_record("REGISTER", user_id, "SUCCESS", "User registered")
         return jsonify({"message": f"User {user_id} registered successfully."}), 201
@@ -185,8 +279,7 @@ def get_challenge():
         log_and_record("CHALLENGE", user_id, "BLOCK", reason)
         return jsonify({"error": reason}), 403
 
-    # Check Security Status
-    sec_record = UserSecurity.query.get(user_id)
+    sec_record = UserSecurity.query.get((user_id, g.tenant_id))
     if sec_record:
         if sec_record.lock_type == 'PERMANENT':
             log_and_record("CHALLENGE", user_id, "BLOCK", "User Soft Locked (Abuse)")
@@ -196,18 +289,16 @@ def get_challenge():
             log_and_record("CHALLENGE", user_id, "BLOCK", "User Locked")
             return jsonify({"error": "Account temporarily locked."}), 403
 
-    user = User.query.get(user_id)
+    user = User.query.get((user_id, g.tenant_id))
     if not user:
         log_and_record("CHALLENGE", user_id, "FAIL", "User not found")
         return jsonify({"error": "User not found"}), 404
 
-    # Generate OTP
     otp = verifier.generate_otp()
 
-    # Save Challenge
-    challenge = ActiveChallenge.query.get(user_id)
+    challenge = ActiveChallenge.query.get((user_id, g.tenant_id))
     if not challenge:
-        challenge = ActiveChallenge(user_id=user_id)
+        challenge = ActiveChallenge(user_id=user_id, tenant_id=g.tenant_id)
         db.session.add(challenge)
     challenge.otp = otp
     challenge.created_at = datetime.datetime.now()
@@ -232,8 +323,7 @@ def verify_otp():
         log_and_record("AUTH", user_id, "BLOCK", reason)
         return jsonify({"error": reason}), 403
 
-    # Get Security State
-    sec_record = UserSecurity.query.get(user_id)
+    sec_record = UserSecurity.query.get((user_id, g.tenant_id))
     failed_attempts = 0
 
     if sec_record:
@@ -247,37 +337,24 @@ def verify_otp():
                 log_and_record("AUTH", user_id, "BLOCK", "User Locked")
                 return jsonify({"error": "Account temporarily locked."}), 403
             else:
-                # Lock expired
                 failed_attempts = 0
     else:
-        sec_record = UserSecurity(user_id=user_id)
+        sec_record = UserSecurity(user_id=user_id, tenant_id=g.tenant_id)
         db.session.add(sec_record)
 
-    # Get Challenge
-    challenge = ActiveChallenge.query.get(user_id)
+    challenge = ActiveChallenge.query.get((user_id, g.tenant_id))
     if not challenge:
         log_and_record("AUTH", user_id, "FAIL", "No active challenge")
         return jsonify({"error": "No active challenge found"}), 400
 
-    # TTL Check (5 min)
     if datetime.datetime.now() - challenge.created_at > datetime.timedelta(minutes=5):
         log_and_record("AUTH", user_id, "FAIL", "OTP Expired")
         return jsonify({"error": "OTP Expired."}), 400
-
-    # Verify
-    # Load Key manually because Verifier registry might be empty in stateless mode
-    user = User.query.get(user_id)
-    # We need to register it in verifier again to ensure key is available for verification check logic
-    # (Though verifier.verify_otp is simple string comparison, so key load isn't strictly needed for verify,
-    # but verifier class structure suggests it. Wait, `verify_otp` compares strings.
-    # Key is needed for ENCRYPTION. Decryption happens on client.
-    # So `verify_otp` is just `original_otp == submitted`.
 
     original_otp = challenge.otp
     status = verifier.verify_otp(original_otp, submitted_otp)
 
     if status == VerificationStatus.VALID or status == VerificationStatus.DURESS:
-        # Success
         db.session.delete(challenge)
         sec_record.failed_attempts = 0
         sec_record.locked_until = None
@@ -291,7 +368,6 @@ def verify_otp():
 
         return jsonify({"status": "success", "message": "Authentication Successful"}), 200
     else:
-        # Fail
         failed_attempts += 1
         sec_record.failed_attempts = failed_attempts
         msg = "Invalid OTP"
@@ -314,13 +390,14 @@ def verify_otp():
         db.session.commit()
         return jsonify({"status": "failure", "message": msg}), code
 
-# --- Admin Routes ---
+# --- Admin Routes (Tenant Scoped) ---
+
 @app.route('/admin/user/<user_id>/lock', methods=['POST'])
 @require_admin
 def admin_lock_user(user_id):
-    sec = UserSecurity.query.get(user_id)
+    sec = UserSecurity.query.get((user_id, g.tenant_id))
     if not sec:
-        sec = UserSecurity(user_id=user_id)
+        sec = UserSecurity(user_id=user_id, tenant_id=g.tenant_id)
         db.session.add(sec)
     sec.lock_type = 'PERMANENT'
     sec.failed_attempts = 0
@@ -332,7 +409,7 @@ def admin_lock_user(user_id):
 @app.route('/admin/user/<user_id>/unlock', methods=['POST'])
 @require_admin
 def admin_unlock_user(user_id):
-    sec = UserSecurity.query.get(user_id)
+    sec = UserSecurity.query.get((user_id, g.tenant_id))
     if sec:
         sec.lock_type = 'NONE'
         sec.failed_attempts = 0
@@ -344,7 +421,12 @@ def admin_unlock_user(user_id):
 @app.route('/admin/users', methods=['GET'])
 @require_admin
 def admin_users():
-    results = db.session.query(User, UserSecurity).outerjoin(UserSecurity, User.user_id == UserSecurity.user_id).all()
+    # Filter by Tenant
+    results = db.session.query(User, UserSecurity)\
+        .filter(User.tenant_id == g.tenant_id)\
+        .outerjoin(UserSecurity, (User.user_id == UserSecurity.user_id) & (User.tenant_id == UserSecurity.tenant_id))\
+        .all()
+
     users_list = []
     for u, s in results:
         status = "Active"
@@ -368,15 +450,15 @@ def admin_settings():
     if request.method == 'POST':
         data = request.json
         for key, val in data.items():
-            setting = SystemSetting.query.get(key)
+            setting = SystemSetting.query.get((key, g.tenant_id))
             if not setting:
-                setting = SystemSetting(key=key)
+                setting = SystemSetting(key=key, tenant_id=g.tenant_id)
                 db.session.add(setting)
             setting.value = str(val)
         db.session.commit()
         return jsonify({"message": "Settings updated"}), 200
     else:
-        settings = SystemSetting.query.all()
+        settings = SystemSetting.query.filter_by(tenant_id=g.tenant_id).all()
         return jsonify({s.key: s.value for s in settings})
 
 @app.route('/admin/policy/blacklist', methods=['GET', 'POST', 'DELETE'])
@@ -388,7 +470,7 @@ def admin_blacklist():
         reason = data.get('reason', 'Manually Blocked')
         try:
             ipaddress.ip_network(cidr)
-            entry = IPBlacklist(cidr=cidr, reason=reason)
+            entry = IPBlacklist(cidr=cidr, tenant_id=g.tenant_id, reason=reason)
             db.session.merge(entry)
             db.session.commit()
             return jsonify({"message": "IP Blocked"}), 201
@@ -396,11 +478,11 @@ def admin_blacklist():
             return jsonify({"error": "Invalid CIDR"}), 400
     elif request.method == 'DELETE':
         cidr = request.json.get('cidr')
-        IPBlacklist.query.filter_by(cidr=cidr).delete()
+        IPBlacklist.query.filter_by(cidr=cidr, tenant_id=g.tenant_id).delete()
         db.session.commit()
         return jsonify({"message": "IP Unblocked"}), 200
     else:
-        items = IPBlacklist.query.order_by(IPBlacklist.created_at.desc()).all()
+        items = IPBlacklist.query.filter_by(tenant_id=g.tenant_id).order_by(IPBlacklist.created_at.desc()).all()
         return jsonify([{"cidr": i.cidr, "reason": i.reason, "created_at": i.created_at} for i in items])
 
 @app.route('/admin/export/logs')
@@ -409,7 +491,7 @@ def admin_export_logs():
     fmt = request.args.get('format', 'csv')
     filter_type = request.args.get('filter', 'all')
 
-    query = AuditLog.query
+    query = AuditLog.query.filter_by(tenant_id=g.tenant_id)
     if filter_type == 'threats':
         query = query.filter(AuditLog.status.in_(['DURESS', 'ABUSE', 'BLOCK']))
     elif filter_type == 'errors':
@@ -436,20 +518,37 @@ def admin_export_logs():
             headers={"Content-disposition": f"attachment; filename=indigo_logs_{filter_type}.csv"}
         )
 
+@app.route('/user/<user_id>/revoke', methods=['DELETE'])
+@require_admin
+def revoke_user(user_id):
+    conn = sqlite3.connect(DB_PATH) # Legacy cleanup - need ORM
+    # Use ORM
+    User.query.filter_by(user_id=user_id, tenant_id=g.tenant_id).delete()
+    ActiveChallenge.query.filter_by(user_id=user_id, tenant_id=g.tenant_id).delete()
+    UserSecurity.query.filter_by(user_id=user_id, tenant_id=g.tenant_id).delete()
+    db.session.commit()
+
+    log_and_record("REVOKE", user_id, "SUCCESS", "Key revoked by admin")
+    return jsonify({"message": f"User {user_id} revoked."}), 200
+
 @app.route('/api/stats')
+@require_admin
 def api_stats():
-    # 1. Counts
-    total_users = AuditLog.query.filter_by(event_type='REGISTER', status='SUCCESS').count()
-    success_auth = AuditLog.query.filter_by(event_type='AUTH', status='SUCCESS').count()
-    fail_auth = AuditLog.query.filter_by(event_type='AUTH', status='FAIL').count()
+    # Only Admin can see Stats now, for their Tenant
+    tenant_id = g.tenant_id
+
+    total_users = AuditLog.query.filter_by(tenant_id=tenant_id, event_type='REGISTER', status='SUCCESS').count()
+    success_auth = AuditLog.query.filter_by(tenant_id=tenant_id, event_type='AUTH', status='SUCCESS').count()
+    fail_auth = AuditLog.query.filter_by(tenant_id=tenant_id, event_type='AUTH', status='FAIL').count()
 
     blocked = UserSecurity.query.filter(
+        UserSecurity.tenant_id == tenant_id,
         (UserSecurity.locked_until != None) | (UserSecurity.lock_type == 'PERMANENT')
     ).count()
 
-    threats = AuditLog.query.filter(AuditLog.status.in_(['DURESS', 'ABUSE'])).count()
+    threats = AuditLog.query.filter(AuditLog.tenant_id == tenant_id, AuditLog.status.in_(['DURESS', 'ABUSE'])).count()
 
-    logs = AuditLog.query.order_by(AuditLog.id.desc()).limit(10).all()
+    logs = AuditLog.query.filter_by(tenant_id=tenant_id).order_by(AuditLog.id.desc()).limit(10).all()
     recent_logs = [{
         "timestamp": l.timestamp.isoformat(),
         "event": l.event_type,
@@ -459,35 +558,29 @@ def api_stats():
         "ip": l.ip_address or "unknown"
     } for l in logs]
 
-    soft_locked = UserSecurity.query.filter_by(lock_type='PERMANENT').all()
+    soft_locked = UserSecurity.query.filter_by(tenant_id=tenant_id, lock_type='PERMANENT').all()
     soft_locked_list = [{"user_id": u.user_id, "fails": u.failed_attempts} for u in soft_locked]
 
-    # Policies
-    biz_hours_setting = SystemSetting.query.get('business_hours_enabled')
+    biz_hours_setting = SystemSetting.query.get(('business_hours_enabled', tenant_id))
     biz_hours = (biz_hours_setting.value == 'true') if biz_hours_setting else False
-    blacklist = IPBlacklist.query.all()
+    blacklist = IPBlacklist.query.filter_by(tenant_id=tenant_id).all()
     blacklist_data = [{"cidr": b.cidr, "reason": b.reason} for b in blacklist]
 
-    # Advanced: Activity (SQLAlchemy specific for SQLite vs Postgres difference requires care)
-    # Using python-side processing for simplicity in this DB-agnostic POC
-    # Production would use db.func.date_trunc for Postgres
-
+    # Advanced
     one_day_ago = datetime.datetime.utcnow() - datetime.timedelta(hours=24)
     recent_auths = AuditLog.query.filter(
+        AuditLog.tenant_id == tenant_id,
         AuditLog.event_type == 'AUTH',
         AuditLog.timestamp > one_day_ago
     ).all()
 
-    # Group by Hour
     activity_map = {}
     for log in recent_auths:
         h = log.timestamp.strftime('%Y-%m-%d %H:00')
         activity_map[h] = activity_map.get(h, 0) + 1
-
     activity_data = [{"hour": k, "count": v} for k, v in sorted(activity_map.items())]
 
-    # Failure Breakdown
-    failures = AuditLog.query.filter(AuditLog.status != 'SUCCESS').all()
+    failures = AuditLog.query.filter(AuditLog.tenant_id == tenant_id, AuditLog.status != 'SUCCESS').all()
     fail_map = {}
     for log in failures:
         label = log.details
@@ -495,11 +588,10 @@ def api_stats():
         elif "Expired" in label: label = "OTP Expired"
         elif "Locked" in label: label = "Account Locked"
         fail_map[label] = fail_map.get(label, 0) + 1
-
-    # Sort top 5
     failure_data = [{"label": k, "count": v} for k, v in sorted(fail_map.items(), key=lambda item: item[1], reverse=True)[:5]]
 
     return jsonify({
+        "tenant_id": tenant_id,
         "total_users": total_users,
         "blocked_users": blocked,
         "threat_count": threats,
@@ -513,6 +605,19 @@ def api_stats():
             "blacklist": blacklist_data
         }
     })
+
+# Unsecured Dashboard endpoint (Serves HTML)
+@app.route('/dashboard')
+def dashboard():
+    return render_template('dashboard.html')
+
+@app.route('/health')
+def health():
+    try:
+        db.session.execute(db.text("SELECT 1"))
+        return jsonify({"status": "healthy"}), 200
+    except Exception as e:
+        return jsonify({"status": "unhealthy", "error": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000)
