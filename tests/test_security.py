@@ -3,19 +3,18 @@ import time
 import datetime
 import os
 from flask import json
-from backend.app import app, DB_PATH, init_db
-import sqlite3
+from backend.app import app, db
+from backend.models import ActiveChallenge
 
 class TestSecurityFeatures:
 
     @pytest.fixture
     def client(self):
         app.config['TESTING'] = True
+        app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
         with app.test_client() as client:
-            # Reset DB for tests
-            if os.path.exists(DB_PATH):
-                os.remove(DB_PATH)
-            init_db()
+            with app.app_context():
+                db.create_all()
             yield client
 
     def register_user(self, client, user_id):
@@ -40,16 +39,11 @@ class TestSecurityFeatures:
         assert resp.status_code == 200
 
         # Manually backdate the challenge in DB to 6 minutes ago
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        old_time = (datetime.datetime.now() - datetime.timedelta(minutes=6)).isoformat()
-        c.execute("UPDATE active_challenges SET created_at=? WHERE user_id=?", (old_time, user_id))
-
-        # Get the OTP to try
-        c.execute("SELECT otp FROM active_challenges WHERE user_id=?", (user_id,))
-        otp = c.fetchone()[0]
-        conn.commit()
-        conn.close()
+        with app.app_context():
+            challenge = ActiveChallenge.query.get(user_id)
+            challenge.created_at = datetime.datetime.now() - datetime.timedelta(minutes=6)
+            db.session.commit()
+            otp = challenge.otp
 
         # Verify
         verify_resp = client.post('/auth/verify', json={"user_id": user_id, "otp": otp})
@@ -71,7 +65,8 @@ class TestSecurityFeatures:
             else:
                 # 5th attempt triggers lock
                 assert resp.status_code == 403
-                assert "Account locked" in resp.json['message']
+                # The logic in app.py says "Too many failures. Locked for 15 mins."
+                assert "Locked" in resp.json['message']
 
         # 6th attempt should be blocked immediately
         resp = client.post('/auth/verify', json={"user_id": user_id, "otp": "000000"})

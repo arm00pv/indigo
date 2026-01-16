@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: indigo
+      POSTGRES_PASSWORD: securepassword
+      POSTGRES_DB: indigo_mfa
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U indigo"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    environment:
+      - DATABASE_URL=postgresql://indigo:securepassword@db:5432/indigo_mfa
+      - ADMIN_API_KEY=admin-secret
+      # - ALERT_WEBHOOK_URL=...
+    depends_on:
+      db:
+        condition: service_healthy
+    deploy:
+      replicas: 3
+    restart: always
+
+  nginx:
+    image: nginx:alpine
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "80:80"
+    depends_on:
+      - app
+
+volumes:
+  db_data:

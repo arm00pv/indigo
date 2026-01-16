@@ -3,3 +3,5 @@ pytest
 flask
 gunicorn
 requests
+flask-sqlalchemy
+psycopg2-binary
