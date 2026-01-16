@@ -4,6 +4,8 @@ import requests
 import time
 import json
 import getpass
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -26,6 +28,7 @@ class Colors:
 API_URL = "http://127.0.0.1:5000"
 KEY_FILE = "device_key.pem"
 PIN_FILE = "device_pin.txt" # Insecure for demo
+PUSH_PORT = 8089 # Local listener for push simulation
 
 def print_header(text):
     print(f"\n{Colors.HEADER}{Colors.BOLD}=== {text} ==={Colors.ENDC}")
@@ -87,13 +90,16 @@ def get_authenticator(user_id):
 def register(auth):
     print_header("Registration")
     pub_key_pem = auth.get_public_key_pem()
+    push_url = f"http://localhost:{PUSH_PORT}/push"
+
     payload = {
         "user_id": auth.user_id,
-        "public_key_pem_hex": pub_key_pem.hex()
+        "public_key_pem_hex": pub_key_pem.hex(),
+        "push_endpoint": push_url
     }
 
     try:
-        print_info(f"Registering User: {auth.user_id}...")
+        print_info(f"Registering User: {auth.user_id} with Push URL: {push_url}...")
         resp = requests.post(f"{API_URL}/register", json=payload)
         if resp.status_code in [200, 201]:
             print_success(f"{resp.json()['message']}")
@@ -143,8 +149,36 @@ def authenticate_flow(auth):
     except Exception as e:
         print_error(f"Network Error: {e}")
 
+# --- Push Listener ---
+class PushHandler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        if self.path == '/push':
+            content_length = int(self.headers['Content-Length'])
+            body = self.rfile.read(content_length)
+            data = json.loads(body)
+
+            print(f"\n{Colors.WARNING}🔔 PUSH NOTIFICATION RECEIVED! {Colors.ENDC}")
+            print(f"{Colors.BOLD}Challenge Blob:{Colors.ENDC} {data.get('encrypted_challenge_hex')[:20]}...")
+            print(f"{Colors.BLUE}Use option '2' to login now.{Colors.ENDC}")
+
+            self.send_response(200)
+            self.end_headers()
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def log_message(self, format, *args):
+        return # Silence server logs
+
+def start_push_listener():
+    server = HTTPServer(('localhost', PUSH_PORT), PushHandler)
+    t = threading.Thread(target=server.serve_forever)
+    t.daemon = True
+    t.start()
+
 def main():
-    print(f"\n{Colors.CYAN}{Colors.BOLD}📱 Indigo MFA Client v1.0{Colors.ENDC}")
+    start_push_listener()
+    print(f"\n{Colors.CYAN}{Colors.BOLD}📱 Indigo MFA Client v1.0 (Push Listener on :{PUSH_PORT}){Colors.ENDC}")
     user_id = input("Enter your User ID (email): ")
     try:
         auth = get_authenticator(user_id)

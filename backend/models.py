@@ -24,6 +24,7 @@ class User(db.Model):
     user_id = db.Column(db.String(255), primary_key=True)
     tenant_id = db.Column(db.String(36), db.ForeignKey('tenants.id'), primary_key=True) # Composite PK
     public_key_pem = db.Column(db.LargeBinary, nullable=False)
+    push_endpoint = db.Column(db.String(500), nullable=True) # Webhook for Push Simulation
 
 class ActiveChallenge(db.Model):
     __tablename__ = 'active_challenges'

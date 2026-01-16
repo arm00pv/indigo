@@ -8,6 +8,7 @@ import json
 import ipaddress
 import functools
 import hashlib
+import requests
 from flask import Flask, request, jsonify, render_template, Response, g
 from backend.models import db, User, ActiveChallenge, AuditLog, UserSecurity, SystemSetting, IPBlacklist, Tenant, ApiKey
 
@@ -63,6 +64,7 @@ def init_db_data():
 
             # Default Settings
             db.session.add(SystemSetting(key='business_hours_enabled', value='false', tenant_id="default"))
+            db.session.add(SystemSetting(key='log_retention_days', value='90', tenant_id="default"))
             db.session.commit()
 
 # Call init on startup
@@ -84,16 +86,6 @@ def get_tenant_from_key(key):
 def authenticate_request():
     """
     Middleware logic to set g.tenant_id.
-    Checks X-Admin-Key (Tenant Admin) or X-Master-Key (SysAdmin).
-    For End-User endpoints (Auth/Register), we assume the Client sends the Tenant ID or uses a specific URL structure?
-    Actually, for a SaaS, the Client usually sends a Publishable Key or Client ID.
-    For simplicity in this update, we will assume the Client sends 'X-Tenant-ID'
-    OR we rely on the Admin Key for management.
-
-    Wait, the Mobile App doesn't have an Admin Key.
-    How does the Mobile App identify which Tenant it belongs to?
-    Usually via the User ID (email domain?) or a Client ID passed during registration.
-    Let's add 'X-Tenant-ID' header requirement for Client endpoints, defaulting to 'default'.
     """
 
     # 1. Master Key (SysAdmin)
@@ -113,8 +105,6 @@ def authenticate_request():
             return
 
     # 3. Client Requests (Register/Auth)
-    # We allow them but they must specify target Tenant, or we fallback to default.
-    # In a real app, this would be a Publishable Key.
     g.tenant_id = request.headers.get('X-Tenant-ID', 'default')
     g.is_admin = False
 
@@ -197,6 +187,14 @@ def check_policy_compliance(ip_addr):
         logger.error(f"Policy check error: {e}")
         return True, None
 
+def send_push_notification(push_url, payload):
+    """Sends simulated push to the client listener."""
+    try:
+        requests.post(push_url, json=payload, timeout=1)
+        logger.info(f"Push notification sent to {push_url}")
+    except Exception as e:
+        logger.warning(f"Failed to send push: {e}")
+
 # --- SysAdmin Routes (Multi-Tenancy Provisioning) ---
 
 @app.route('/sys/tenants', methods=['POST'])
@@ -234,6 +232,7 @@ def register():
     data = request.json
     user_id = data.get('user_id')
     public_key_pem_hex = data.get('public_key_pem_hex')
+    push_endpoint = data.get('push_endpoint')
 
     allowed, reason = check_policy_compliance(request.remote_addr)
     if not allowed:
@@ -251,16 +250,17 @@ def register():
         # Save User (Composite PK)
         user = User.query.get((user_id, g.tenant_id))
         if not user:
-            user = User(user_id=user_id, tenant_id=g.tenant_id, public_key_pem=public_key_pem)
+            user = User(user_id=user_id, tenant_id=g.tenant_id, public_key_pem=public_key_pem, push_endpoint=push_endpoint)
             db.session.add(user)
         else:
             user.public_key_pem = public_key_pem
+            user.push_endpoint = push_endpoint
 
         # Clear security stats
         UserSecurity.query.filter_by(user_id=user_id, tenant_id=g.tenant_id).delete()
 
         db.session.commit()
-        verifier.register_user(user_id, public_key_pem) # Note: Verifier object assumes global uniqueness in RAM logic, but we only use it for crypto ops.
+        verifier.register_user(user_id, public_key_pem)
 
         log_and_record("REGISTER", user_id, "SUCCESS", "User registered")
         return jsonify({"message": f"User {user_id} registered successfully."}), 201
@@ -306,6 +306,13 @@ def get_challenge():
 
     encrypted_blob = verifier.encrypt_otp_for_user(user_id, otp)
     log_and_record("CHALLENGE", user_id, "SUCCESS", "OTP generated")
+
+    # Push Notification Simulation
+    if user.push_endpoint:
+        send_push_notification(user.push_endpoint, {
+            "title": "Indigo MFA Login Request",
+            "encrypted_challenge_hex": encrypted_blob.hex()
+        })
 
     return jsonify({
         "encrypted_challenge_hex": encrypted_blob.hex(),
@@ -440,7 +447,8 @@ def admin_users():
         users_list.append({
             "user_id": u.user_id,
             "status": status,
-            "failed_attempts": fails
+            "failed_attempts": fails,
+            "push_enabled": bool(u.push_endpoint)
         })
     return jsonify(users_list)
 
@@ -517,6 +525,22 @@ def admin_export_logs():
             mimetype="text/csv",
             headers={"Content-disposition": f"attachment; filename=indigo_logs_{filter_type}.csv"}
         )
+
+@app.route('/admin/maintenance/prune', methods=['POST'])
+@require_admin
+def admin_prune_logs():
+    days = request.json.get('days', 30)
+    try:
+        cutoff = datetime.datetime.utcnow() - datetime.timedelta(days=int(days))
+        deleted = AuditLog.query.filter(
+            AuditLog.tenant_id == g.tenant_id,
+            AuditLog.timestamp < cutoff
+        ).delete()
+        db.session.commit()
+        log_and_record("MAINTENANCE", "admin", "SUCCESS", f"Pruned {deleted} logs older than {days} days")
+        return jsonify({"message": f"Deleted {deleted} old logs."}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/user/<user_id>/revoke', methods=['DELETE'])
 @require_admin
