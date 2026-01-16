@@ -23,6 +23,11 @@ Read the **[Deployment Guide](DEPLOY.md)** for detailed instructions on:
 ### 2. Client Development
 Read the **[Mobile Developer Guide](MOBILE_DEV_GUIDE.md)** to build the native Authenticator app for iOS (Swift) and Android (Kotlin).
 
+## 📚 Guides
+- **[Enterprise Guide](docs/ENTERPRISE_GUIDE.md)**: For IT Admins managing multi-tenant clusters.
+- **[User Guide](docs/USER_GUIDE.md)**: For end-users enrolling via Smart Code/QR.
+- **[Validator Guide](docs/VALIDATOR_GUIDE.md)**: For system operators and auditors.
+
 ## 🔧 Architecture
 
 The system consists of three main components:

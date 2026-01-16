@@ -66,8 +66,11 @@
             <p class="small text-muted mb-2">Scan with Indigo Mobile App</p>
             <img id="qr-image" src="" class="img-fluid border p-2" style="max-width: 200px;">
             <div class="mt-3">
-                <small class="d-block text-muted">Or paste this payload:</small>
-                <textarea id="qr-payload" class="form-control form-control-sm" rows="3" readonly></textarea>
+                <small class="d-block text-muted">Smart Code (Copy & Paste):</small>
+                <div class="input-group">
+                    <input type="text" id="qr-payload" class="form-control form-control-sm" readonly>
+                    <button class="btn btn-outline-secondary btn-sm" type="button" onclick="copySmartCode()"><i class="fas fa-copy"></i></button>
+                </div>
             </div>
         </div>
       </div>
@@ -585,7 +588,7 @@
             if(res.ok) {
                 document.getElementById('qr-result').style.display = 'block';
                 document.getElementById('qr-image').src = data.qr_image;
-                document.getElementById('qr-payload').value = data.payload;
+                document.getElementById('qr-payload').value = data.smart_code;
             } else {
                 alert("Error: " + data.error);
             }
@@ -593,6 +596,14 @@
             console.error(e);
             alert("Network Error");
         }
+    }
+
+    function copySmartCode() {
+        const copyText = document.getElementById("qr-payload");
+        copyText.select();
+        copyText.setSelectionRange(0, 99999);
+        navigator.clipboard.writeText(copyText.value);
+        // alert("Copied Smart Code");
     }
 
     function updateAuthChart(success, fail) {

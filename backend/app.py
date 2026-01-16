@@ -293,10 +293,14 @@ def generate_provisioning_qr():
     b64_img = base64.b64encode(buf.getvalue()).decode('utf-8')
     data_uri = f"data:image/png;base64,{b64_img}"
 
+    # Generate Smart Code (Base64 of Payload)
+    smart_code = base64.b64encode(payload_str.encode('utf-8')).decode('utf-8')
+
     return jsonify({
         "user_id": user_id,
         "qr_image": data_uri,
-        "payload": payload_str
+        "payload": payload_str,
+        "smart_code": smart_code
     })
 
 # --- User Routes (Tenant Scoped) ---
