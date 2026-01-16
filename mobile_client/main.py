@@ -102,9 +102,40 @@ def register(auth):
         print_info(f"Registering User: {auth.user_id} with Push URL: {push_url}...")
         resp = requests.post(f"{API_URL}/register", json=payload)
         if resp.status_code in [200, 201]:
-            print_success(f"{resp.json()['message']}")
+            data = resp.json()
+            print_success(f"{data['message']}")
+
+            if "backup_codes" in data:
+                print("\n" + Colors.WARNING + "⚠️  EMERGENCY BACKUP CODES - SAVE THESE NOW!" + Colors.ENDC)
+                print(Colors.WARNING + "These codes allow you to login if you lose your device/PIN." + Colors.ENDC)
+                print(Colors.WARNING + "They will ONLY be shown ONCE.\n" + Colors.ENDC)
+                for code in data['backup_codes']:
+                    print(f"  🔹 {Colors.BOLD}{code}{Colors.ENDC}")
+                print("")
+                input(f"{Colors.BLUE}Press Enter once you have saved them...{Colors.ENDC}")
         else:
             print_error(f"Error: {resp.text}")
+    except Exception as e:
+        print_error(f"Network Error: {e}")
+
+def login_with_backup_code(auth):
+    print_header("Emergency Login (Backup Code)")
+    code = input(f"{Colors.BOLD}Enter one of your 8-character Backup Codes: {Colors.ENDC}")
+
+    if len(code) < 8:
+        print_error("Invalid code length.")
+        return
+
+    try:
+        print_info("Verifying Backup Code...")
+        verify_resp = requests.post(f"{API_URL}/auth/verify", json={"user_id": auth.user_id, "otp": code})
+
+        if verify_resp.status_code == 200:
+            print_success("Authentication Successful! (Used Backup Code)")
+        elif verify_resp.status_code == 403:
+            print_error(f"Security Alert: {verify_resp.json().get('message')}")
+        else:
+            print_error(f"Authentication Failed: {verify_resp.json().get('message')}")
     except Exception as e:
         print_error(f"Network Error: {e}")
 
@@ -189,7 +220,8 @@ def main():
         print(f"\n{Colors.HEADER}--- Menu ---{Colors.ENDC}")
         print("1. Register with Server")
         print("2. Login (Receive & Decrypt Challenge)")
-        print("3. Exit")
+        print("3. Login with Backup Code")
+        print("4. Exit")
         choice = input(f"{Colors.BOLD}Select: {Colors.ENDC}")
 
         if choice == "1":
@@ -197,6 +229,8 @@ def main():
         elif choice == "2":
             authenticate_flow(auth)
         elif choice == "3":
+            login_with_backup_code(auth)
+        elif choice == "4":
             print("Bye!")
             break
 

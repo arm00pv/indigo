@@ -14,8 +14,13 @@ class TestSecurityFeatures:
         app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
         with app.test_client() as client:
             with app.app_context():
+                db.engine.dispose()
                 db.create_all()
             yield client
+            with app.app_context():
+                db.session.remove()
+                db.drop_all()
+                db.engine.dispose()
 
     def register_user(self, client, user_id):
         # Generate dummy key
@@ -40,7 +45,8 @@ class TestSecurityFeatures:
 
         # Manually backdate the challenge in DB to 6 minutes ago
         with app.app_context():
-            challenge = ActiveChallenge.query.get(user_id)
+            # Composite key: (user_id, tenant_id)
+            challenge = ActiveChallenge.query.get((user_id, "default"))
             challenge.created_at = datetime.datetime.now() - datetime.timedelta(minutes=6)
             db.session.commit()
             otp = challenge.otp

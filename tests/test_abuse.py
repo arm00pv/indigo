@@ -12,8 +12,20 @@ class TestAbuseFeatures:
         app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
         with app.test_client() as client:
             with app.app_context():
+                db.engine.dispose()
                 db.create_all()
+                # Setup Tenant & Key
+                from backend.models import Tenant, ApiKey
+                import hashlib
+                db.session.add(Tenant(id="default", name="Default Org"))
+                h = hashlib.sha256("test-key".encode()).hexdigest()
+                db.session.add(ApiKey(key_hash=h, tenant_id="default"))
+                db.session.commit()
             yield client
+            with app.app_context():
+                db.session.remove()
+                db.drop_all()
+                db.engine.dispose()
 
     def register_user(self, client, user_id):
         from mfa_sdk.crypto import CryptoUtils

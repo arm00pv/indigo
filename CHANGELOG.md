@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-01-16
+### Added
+- **Multi-Tenancy**:
+    - Introduced `Tenant` model to support multiple organizations in a single instance.
+    - Added `ApiKey` system for scoped API access (`X-Admin-Key` header).
+    - Updated all models (`User`, `AuditLog`, etc.) to include `tenant_id` (Composite Primary Keys).
+- **High Availability**:
+    - Added `docker-compose-cluster.yml` for Nginx Load Balancing + 3 App Replicas + Postgres.
+    - Migrated database layer to SQLAlchemy to support PostgreSQL for clustering.
+- **Emergency Access**:
+    - **Backup Codes**: Users now receive 5 one-time use backup codes during registration.
+    - Added "Login with Backup Code" flow to API and Mobile Client.
+- **Push Notifications**:
+    - Integrated Webhook-based Push Notification simulation.
+    - Mobile client listens for push events to auto-trigger login.
+
+### Changed
+- **Database**: Refactored from raw SQLite `sqlite3` calls to SQLAlchemy ORM.
+- **API**: `/register` response now includes `backup_codes`.
+- **Dashboard**: Added "Backup Codes Remaining" badge to user list.
+
 ## [1.0.0] - 2026-01-15
 ### Added
 - **Deployment**: Smart "One-Click" Installer (`scripts/install_lamp.sh`) with path auto-detection and safe Apache config appending.

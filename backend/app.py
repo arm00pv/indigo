@@ -9,8 +9,10 @@ import ipaddress
 import functools
 import hashlib
 import requests
+import secrets
 from flask import Flask, request, jsonify, render_template, Response, g
 from backend.models import db, User, ActiveChallenge, AuditLog, UserSecurity, SystemSetting, IPBlacklist, Tenant, ApiKey
+from backend.utils import generate_backup_codes
 
 # Add project root to path so we can import mfa_sdk
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -66,9 +68,6 @@ def init_db_data():
             db.session.add(SystemSetting(key='business_hours_enabled', value='false', tenant_id="default"))
             db.session.add(SystemSetting(key='log_retention_days', value='90', tenant_id="default"))
             db.session.commit()
-
-# Call init on startup
-init_db_data()
 
 # --- Decorators & Middleware ---
 
@@ -247,14 +246,25 @@ def register():
         public_key_pem = bytes.fromhex(public_key_pem_hex)
         CryptoUtils.load_public_key(public_key_pem)
 
+        # Generate Backup Codes
+        codes = generate_backup_codes()
+        hashed_codes = [hash_key(c) for c in codes]
+
         # Save User (Composite PK)
         user = User.query.get((user_id, g.tenant_id))
         if not user:
-            user = User(user_id=user_id, tenant_id=g.tenant_id, public_key_pem=public_key_pem, push_endpoint=push_endpoint)
+            user = User(
+                user_id=user_id,
+                tenant_id=g.tenant_id,
+                public_key_pem=public_key_pem,
+                push_endpoint=push_endpoint,
+                backup_codes=json.dumps(hashed_codes)
+            )
             db.session.add(user)
         else:
             user.public_key_pem = public_key_pem
             user.push_endpoint = push_endpoint
+            user.backup_codes = json.dumps(hashed_codes)
 
         # Clear security stats
         UserSecurity.query.filter_by(user_id=user_id, tenant_id=g.tenant_id).delete()
@@ -263,7 +273,10 @@ def register():
         verifier.register_user(user_id, public_key_pem)
 
         log_and_record("REGISTER", user_id, "SUCCESS", "User registered")
-        return jsonify({"message": f"User {user_id} registered successfully."}), 201
+        return jsonify({
+            "message": f"User {user_id} registered successfully.",
+            "backup_codes": codes
+        }), 201
     except Exception as e:
         db.session.rollback()
         log_and_record("REGISTER", user_id, "FAIL", str(e))
@@ -349,6 +362,28 @@ def verify_otp():
         sec_record = UserSecurity(user_id=user_id, tenant_id=g.tenant_id)
         db.session.add(sec_record)
 
+    # 1. Check Backup Codes First (if user exists)
+    user = User.query.get((user_id, g.tenant_id))
+    used_backup = False
+
+    if user and user.backup_codes:
+        hashed_input = hash_key(submitted_otp)
+        codes = json.loads(user.backup_codes)
+        if hashed_input in codes:
+            # Valid Backup Code!
+            codes.remove(hashed_input)
+            user.backup_codes = json.dumps(codes)
+
+            # Reset security
+            sec_record.failed_attempts = 0
+            sec_record.locked_until = None
+            sec_record.lock_type = 'NONE'
+            db.session.commit()
+
+            log_and_record("AUTH", user_id, "SUCCESS", "Used Emergency Backup Code")
+            return jsonify({"status": "success", "message": "Authentication Successful (Backup Code)"}), 200
+
+    # 2. Check Standard OTP
     challenge = ActiveChallenge.query.get((user_id, g.tenant_id))
     if not challenge:
         log_and_record("AUTH", user_id, "FAIL", "No active challenge")
@@ -444,11 +479,18 @@ def admin_users():
                 status = "Soft Locked"
             elif s.locked_until and datetime.datetime.now() < s.locked_until:
                 status = "Temp Locked"
+
+        # Get count of codes
+        codes_count = 0
+        if u.backup_codes:
+            codes_count = len(json.loads(u.backup_codes))
+
         users_list.append({
             "user_id": u.user_id,
             "status": status,
             "failed_attempts": fails,
-            "push_enabled": bool(u.push_endpoint)
+            "push_enabled": bool(u.push_endpoint),
+            "backup_codes_count": codes_count
         })
     return jsonify(users_list)
 
@@ -644,4 +686,5 @@ def health():
         return jsonify({"status": "unhealthy", "error": str(e)}), 500
 
 if __name__ == "__main__":
+    init_db_data()
     app.run(host='0.0.0.0', port=5000)

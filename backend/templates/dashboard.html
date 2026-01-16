@@ -439,8 +439,16 @@
                 let badge = 'bg-success';
                 if(u.status !== 'Active') badge = 'bg-danger';
 
+                let backupBadge = '';
+                if (u.backup_codes_count > 0) {
+                    backupBadge = `<span class="badge bg-warning text-dark ms-1" style="font-size:0.7em" title="Backup Codes Remaining">${u.backup_codes_count}</span>`;
+                }
+
                 const row = `<tr>
-                    <td class="ps-3 small fw-bold">${u.user_id}</td>
+                    <td class="ps-3 small fw-bold">
+                        ${u.user_id}
+                        ${backupBadge}
+                    </td>
                     <td><span class="badge ${badge} status-badge">${u.status}</span></td>
                     <td>
                         <button class="btn btn-xs btn-outline-danger" title="Lock" onclick="lockUser('${u.user_id}')"><i class="fas fa-lock"></i></button>
