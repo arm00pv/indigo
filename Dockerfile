@@ -20,5 +20,5 @@ ENV FLASK_APP=backend.app
 # Expose port
 EXPOSE 5000
 
-# Run with Gunicorn
-CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5000", "--access-logfile", "-", "backend.app:app"]
+# Run with Gunicorn (Initialize DB first)
+CMD ["sh", "-c", "flask init-db && gunicorn -w 4 -b 0.0.0.0:5000 --access-logfile - backend.app:app"]

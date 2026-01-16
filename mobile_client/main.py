@@ -139,6 +139,25 @@ def login_with_backup_code(auth):
     except Exception as e:
         print_error(f"Network Error: {e}")
 
+def setup_via_qr():
+    print_header("QR Configuration")
+    print("Paste the JSON payload from the Dashboard QR code:")
+    payload = input(f"{Colors.BOLD}> {Colors.ENDC}")
+    try:
+        data = json.loads(payload)
+        url = data.get('url')
+        uid = data.get('user_id')
+
+        if not url or not uid:
+            print_error("Invalid Payload")
+            return None, None
+
+        print_success(f"Configured for User: {uid} @ {url}")
+        return uid, url
+    except:
+        print_error("Invalid JSON")
+        return None, None
+
 def authenticate_flow(auth):
     print_header("Authentication")
 
@@ -221,7 +240,8 @@ def main():
         print("1. Register with Server")
         print("2. Login (Receive & Decrypt Challenge)")
         print("3. Login with Backup Code")
-        print("4. Exit")
+        print("4. Setup via QR Payload")
+        print("5. Exit")
         choice = input(f"{Colors.BOLD}Select: {Colors.ENDC}")
 
         if choice == "1":
@@ -231,6 +251,14 @@ def main():
         elif choice == "3":
             login_with_backup_code(auth)
         elif choice == "4":
+             uid, url = setup_via_qr()
+             if uid:
+                 global API_URL
+                 API_URL = url
+                 # Re-init Auth (this loads keys for new user or creates them)
+                 auth = get_authenticator(uid)
+                 register(auth)
+        elif choice == "5":
             print("Bye!")
             break
 

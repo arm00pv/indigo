@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-01-16
+### Added
+- **Observability**:
+    - **Prometheus Metrics**: Exposing `/metrics` endpoint with counters for requests, latency, auth events, and threats.
+    - Instrumented `log_and_record` to capture all security events automatically.
+- **Onboarding**:
+    - **QR Code Enrollment**: Admin Dashboard can now generate configuration QR codes for users.
+    - **Mobile Client**: Added "Setup via QR Payload" to the CLI menu for easy configuration.
+    - New API endpoint `/admin/provision/qrcode` to generate provisioning payloads.
+
 ## [1.1.0] - 2026-01-16
 ### Added
 - **Multi-Tenancy**:

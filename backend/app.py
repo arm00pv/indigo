@@ -10,7 +10,12 @@ import functools
 import hashlib
 import requests
 import secrets
+import time
+import base64
+import io
+import qrcode
 from flask import Flask, request, jsonify, render_template, Response, g
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 from backend.models import db, User, ActiveChallenge, AuditLog, UserSecurity, SystemSetting, IPBlacklist, Tenant, ApiKey
 from backend.utils import generate_backup_codes
 
@@ -44,6 +49,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger("Indigo_MFA_Backend")
 
+# --- Prometheus Metrics ---
+HTTP_REQUESTS = Counter('http_requests_total', 'Total HTTP Requests', ['method', 'endpoint', 'status'])
+HTTP_LATENCY = Histogram('http_request_duration_seconds', 'HTTP Request Latency', ['endpoint'])
+MFA_EVENTS = Counter('mfa_events_total', 'MFA Security Events', ['event_type', 'status', 'tenant'])
+ACTIVE_THREATS = Counter('mfa_threats_total', 'Active Security Threats', ['type', 'tenant'])
+
 # Initialize Verifier SDK
 verifier = Verifier(verifier_id="Indigo-MFA-Backend")
 
@@ -51,23 +62,33 @@ verifier = Verifier(verifier_id="Indigo-MFA-Backend")
 
 def init_db_data():
     """Initialize DB tables if not exist."""
-    with app.app_context():
-        db.create_all()
-        # Ensure Default Tenant exists for backward compatibility or initial setup
-        if not Tenant.query.filter_by(name="Default Organization").first():
-            default_tenant = Tenant(id="default", name="Default Organization")
-            db.session.add(default_tenant)
+    # Ensure app context if not present (handled by caller usually, but safe to check)
+    # But db.create_all() needs it.
+    # The CLI command provides context.
 
-            # Create a default API Key for it (hashed)
-            # For "secret-admin-key", the hash is:
-            k = "secret-admin-key"
-            h = hashlib.sha256(k.encode()).hexdigest()
-            db.session.add(ApiKey(key_hash=h, tenant_id="default"))
+    db.create_all()
+    # Ensure Default Tenant exists for backward compatibility or initial setup
+    if not Tenant.query.filter_by(name="Default Organization").first():
+        default_tenant = Tenant(id="default", name="Default Organization")
+        db.session.add(default_tenant)
 
-            # Default Settings
-            db.session.add(SystemSetting(key='business_hours_enabled', value='false', tenant_id="default"))
-            db.session.add(SystemSetting(key='log_retention_days', value='90', tenant_id="default"))
-            db.session.commit()
+        # Create a default API Key for it (hashed)
+        # Check env var for seed
+        k = os.environ.get("ADMIN_API_KEY", "secret-admin-key")
+        h = hashlib.sha256(k.encode()).hexdigest()
+        db.session.add(ApiKey(key_hash=h, tenant_id="default"))
+
+        # Default Settings
+        db.session.add(SystemSetting(key='business_hours_enabled', value='false', tenant_id="default"))
+        db.session.add(SystemSetting(key='log_retention_days', value='90', tenant_id="default"))
+        db.session.commit()
+        logger.info(f"Initialized Database with Admin Key hash: {h[:8]}...")
+
+@app.cli.command("init-db")
+def init_db_command():
+    """Initialize the database."""
+    init_db_data()
+    print("Initialized the database.")
 
 # --- Decorators & Middleware ---
 
@@ -109,7 +130,20 @@ def authenticate_request():
 
 @app.before_request
 def before_request():
+    request.start_time = time.time()
     authenticate_request()
+
+@app.after_request
+def after_request(response):
+    if request.endpoint == 'metrics':
+        return response
+
+    latency = time.time() - request.start_time
+    endpoint = request.endpoint if request.endpoint else 'unknown'
+
+    HTTP_REQUESTS.labels(request.method, endpoint, response.status_code).inc()
+    HTTP_LATENCY.labels(endpoint).observe(latency)
+    return response
 
 def require_sysadmin(f):
     @functools.wraps(f)
@@ -141,9 +175,13 @@ def log_and_record(event_type, user_id, status, details=""):
         logger.info(log_msg)
     elif status == "DURESS" or status == "ABUSE":
         logger.critical(f"🚨 {status} SIGNAL: {log_msg}")
-        send_webhook_alert(event_type, user_id, status, details) # Pass Tenant ID to webhook later
+        send_webhook_alert(event_type, user_id, status, details)
+        ACTIVE_THREATS.labels(status, tenant_id).inc()
     else:
         logger.warning(log_msg)
+
+    # Update Prometheus
+    MFA_EVENTS.labels(event_type, status, tenant_id).inc()
 
     try:
         log_entry = AuditLog(
@@ -223,6 +261,43 @@ def create_api_key():
     db.session.add(ApiKey(key_hash=h, tenant_id=tenant_id))
     db.session.commit()
     return jsonify({"message": "Key registered for tenant"}), 201
+
+@app.route('/admin/provision/qrcode', methods=['POST'])
+@require_admin
+def generate_provisioning_qr():
+    user_id = request.json.get('user_id')
+    if not user_id:
+        return jsonify({"error": "Missing user_id"}), 400
+
+    # Create Configuration Payload
+    # Note: request.host_url includes scheme and port (e.g., http://127.0.0.1:5000/)
+    config = {
+        "url": request.host_url.rstrip('/'),
+        "tenant_id": g.tenant_id,
+        "user_id": user_id
+    }
+    payload_str = json.dumps(config)
+
+    # Generate QR Code
+    qr = qrcode.QRCode(version=1, box_size=10, border=4)
+    qr.add_data(payload_str)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+
+    # Save to Buffer
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+
+    # Encode Base64
+    b64_img = base64.b64encode(buf.getvalue()).decode('utf-8')
+    data_uri = f"data:image/png;base64,{b64_img}"
+
+    return jsonify({
+        "user_id": user_id,
+        "qr_image": data_uri,
+        "payload": payload_str
+    })
 
 # --- User Routes (Tenant Scoped) ---
 
@@ -587,8 +662,6 @@ def admin_prune_logs():
 @app.route('/user/<user_id>/revoke', methods=['DELETE'])
 @require_admin
 def revoke_user(user_id):
-    conn = sqlite3.connect(DB_PATH) # Legacy cleanup - need ORM
-    # Use ORM
     User.query.filter_by(user_id=user_id, tenant_id=g.tenant_id).delete()
     ActiveChallenge.query.filter_by(user_id=user_id, tenant_id=g.tenant_id).delete()
     UserSecurity.query.filter_by(user_id=user_id, tenant_id=g.tenant_id).delete()
@@ -685,6 +758,11 @@ def health():
     except Exception as e:
         return jsonify({"status": "unhealthy", "error": str(e)}), 500
 
+@app.route('/metrics')
+def metrics():
+    return Response(generate_latest(), mimetype=CONTENT_TYPE_LATEST)
+
 if __name__ == "__main__":
-    init_db_data()
+    with app.app_context():
+        init_db_data()
     app.run(host='0.0.0.0', port=5000)

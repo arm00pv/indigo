@@ -5,3 +5,6 @@ gunicorn
 requests
 flask-sqlalchemy
 psycopg2-binary
+prometheus_client
+qrcode
+pillow

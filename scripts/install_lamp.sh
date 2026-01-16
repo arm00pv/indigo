@@ -13,7 +13,7 @@ REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 APP_DIR="$REPO_ROOT"
 SERVICE_NAME="indigo-mfa"
 DOMAIN="localhost"
-ADMIN_KEY="change-me-immediately"
+ADMIN_KEY=$(openssl rand -hex 16)
 
 echo "=== Indigo MFA Installer ==="
 echo "Using Installation Directory: $APP_DIR"
@@ -51,8 +51,10 @@ Group=www-data
 WorkingDirectory=$APP_DIR
 Environment="PATH=$APP_DIR/venv/bin"
 Environment="PYTHONPATH=$APP_DIR"
+Environment="FLASK_APP=backend.app"
 Environment="ADMIN_API_KEY=$ADMIN_KEY"
 # Environment="ALERT_WEBHOOK_URL="
+ExecStartPre=$APP_DIR/venv/bin/flask init-db
 ExecStart=$APP_DIR/venv/bin/gunicorn --workers 3 --bind unix:$APP_DIR/indigo.sock -m 007 backend.app:app
 
 [Install]
