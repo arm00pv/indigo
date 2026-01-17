@@ -2,6 +2,7 @@ from mfa_sdk.crypto import CryptoUtils
 from mfa_sdk.common import get_duress_otp
 import secrets
 import string
+import json
 from enum import Enum
 
 class VerificationStatus(Enum):
@@ -29,9 +30,10 @@ class Verifier:
         """Generates a cryptographically secure numeric OTP."""
         return ''.join(secrets.choice(string.digits) for _ in range(length))
 
-    def encrypt_otp_for_user(self, user_id, otp):
+    def encrypt_otp_for_user(self, user_id, otp, context=None):
         """
         Encrypts the OTP for the specific user.
+        If context is provided, packs it into a JSON payload.
         Returns the encrypted blob.
         """
         if user_id not in self.user_registry:
@@ -40,7 +42,13 @@ class Verifier:
         pub_key_pem = self.user_registry[user_id]
         pub_key = CryptoUtils.load_public_key(pub_key_pem)
 
-        return CryptoUtils.encrypt_data(pub_key, otp.encode('utf-8'))
+        if context:
+            payload = json.dumps({"otp": otp, "context": context})
+            data = payload.encode('utf-8')
+        else:
+            data = otp.encode('utf-8')
+
+        return CryptoUtils.encrypt_data(pub_key, data)
 
     def verify_otp(self, original_otp, submitted_otp) -> VerificationStatus:
         """

@@ -26,7 +26,7 @@ class Colors:
     UNDERLINE = '\033[4m'
 
 # Configuration
-API_URL = "http://127.0.0.1:5000"
+API_URLS = ["http://127.0.0.1:5000"] # Primary + Failovers
 TENANT_ID = "default"
 CONFIG_FILE = "client_config.json"
 KEY_FILE = "device_key.pem"
@@ -46,27 +46,33 @@ def print_info(text):
     print(f"{Colors.BLUE}ℹ️  {text}{Colors.ENDC}")
 
 def load_config():
-    global API_URL, TENANT_ID
+    global API_URLS, TENANT_ID
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, 'r') as f:
                 data = json.load(f)
-                API_URL = data.get('api_url', API_URL)
+
+                # Handle legacy single URL or list
+                if 'api_urls' in data:
+                    API_URLS = data['api_urls']
+                elif 'api_url' in data:
+                    API_URLS = [data['api_url']]
+
                 TENANT_ID = data.get('tenant_id', 'default')
                 return data.get('user_id')
         except:
             print_error("Failed to load config.")
     return None
 
-def save_config(user_id, url, tenant_id):
-    global API_URL, TENANT_ID
-    API_URL = url
+def save_config(user_id, urls, tenant_id):
+    global API_URLS, TENANT_ID
+    API_URLS = urls
     TENANT_ID = tenant_id
     try:
         with open(CONFIG_FILE, 'w') as f:
             json.dump({
                 "user_id": user_id,
-                "api_url": url,
+                "api_urls": urls,
                 "tenant_id": tenant_id
             }, f, indent=2)
         print_success("Configuration Saved.")
@@ -75,14 +81,21 @@ def save_config(user_id, url, tenant_id):
 
 def send_request(method, endpoint, json_data=None):
     headers = {"X-Tenant-ID": TENANT_ID}
-    url = f"{API_URL}{endpoint}"
-    try:
-        if method == 'POST':
-            return requests.post(url, json=json_data, headers=headers, timeout=5)
-        elif method == 'GET':
-            return requests.get(url, headers=headers, timeout=5)
-    except Exception as e:
-        raise Exception(f"Connection Error: {e}")
+
+    last_error = None
+    for base_url in API_URLS:
+        url = f"{base_url.rstrip('/')}{endpoint}"
+        try:
+            if method == 'POST':
+                return requests.post(url, json=json_data, headers=headers, timeout=5)
+            elif method == 'GET':
+                return requests.get(url, headers=headers, timeout=5)
+        except Exception as e:
+            print_info(f"Failed to connect to {base_url}, trying next...")
+            last_error = e
+            continue
+
+    raise Exception(f"All endpoints failed. Last error: {last_error}")
 
 def get_authenticator(user_id):
     auth = Authenticator(user_id)
@@ -99,9 +112,7 @@ def get_authenticator(user_id):
             auth._pin = pin
         except Exception:
             print_error("Key file corrupted or incompatible.")
-            # Could prompt to reset, but simple fail for now
 
-        # Load duress pin if exists
         if os.path.exists("device_duress.txt"):
              with open("device_duress.txt", "r") as f:
                 auth._duress_pin = f.read().strip()
@@ -145,7 +156,7 @@ def register(auth):
     }
 
     try:
-        print_info(f"Registering User: {auth.user_id} at {API_URL} (Tenant: {TENANT_ID})...")
+        print_info(f"Registering User: {auth.user_id} (Tenant: {TENANT_ID})...")
         resp = send_request('POST', '/register', payload)
 
         if resp.status_code in [200, 201]:
@@ -191,7 +202,6 @@ def setup_via_qr():
     print("Paste the JSON payload or Smart Code from the Dashboard:")
     payload = input(f"{Colors.BOLD}> {Colors.ENDC}")
 
-    # Try to decode if base64 (Smart Code)
     import base64
     if not payload.strip().startswith("{"):
         try:
@@ -199,20 +209,29 @@ def setup_via_qr():
             payload = decoded
             print_info("Decoded Smart Code.")
         except:
-            pass # Maybe raw JSON?
+            pass
 
     try:
         data = json.loads(payload)
-        url = data.get('url')
         uid = data.get('user_id')
         tid = data.get('tenant_id', 'default')
 
-        if not url or not uid:
-            print_error("Invalid Payload: Missing url or user_id")
+        # Handle single url vs list (for redundancy)
+        urls = []
+        if 'url' in data:
+            urls.append(data['url'])
+        if 'urls' in data:
+            urls.extend(data['urls'])
+
+        # Dedupe
+        urls = list(dict.fromkeys(urls))
+
+        if not urls or not uid:
+            print_error("Invalid Payload: Missing url(s) or user_id")
             return None, None, None
 
-        print_success(f"Configured for User: {uid} @ {url} (Tenant: {tid})")
-        return uid, url, tid
+        print_success(f"Configured for User: {uid} @ {urls} (Tenant: {tid})")
+        return uid, urls, tid
     except Exception as e:
         print_error(f"Invalid Configuration: {e}")
         return None, None, None
@@ -239,8 +258,18 @@ def authenticate_flow(auth):
 
         pin = input(f"{Colors.BOLD}Enter PIN to decrypt: {Colors.ENDC}")
         try:
-            otp = auth.decrypt_otp(encrypted_blob, pin)
-            print_success(f"Decrypted OTP: {Colors.BOLD}{otp}{Colors.ENDC}")
+            # Decrypt returns tuple (otp, context)
+            otp, context = auth.decrypt_otp(encrypted_blob, pin)
+
+            # --- Context-Aware Auth Display ---
+            if context:
+                print(f"\n{Colors.WARNING}{Colors.BOLD}⚠️  ACTION REQUESTED: {context}{Colors.ENDC}")
+                confirm = input(f"{Colors.BOLD}Do you verify this action? (y/N): {Colors.ENDC}")
+                if confirm.lower() != 'y':
+                    print_error("Authentication Cancelled by User.")
+                    return
+            else:
+                print_success(f"Decrypted OTP: {Colors.BOLD}{otp}{Colors.ENDC}")
 
             print_info("Submitting OTP to server...")
             verify_resp = send_request('POST', '/auth/verify', {"user_id": auth.user_id, "otp": otp})
@@ -287,12 +316,13 @@ def start_push_listener():
 
 def main():
     start_push_listener()
-    print(f"\n{Colors.CYAN}{Colors.BOLD}📱 Indigo MFA Client v1.2 (Push Listener on :{PUSH_PORT}){Colors.ENDC}")
+    print(f"\n{Colors.CYAN}{Colors.BOLD}📱 Indigo MFA Client v1.3 (Redundant){Colors.ENDC}")
 
     # Auto-load config
     user_id = load_config()
     if user_id:
         print_info(f"Loaded configuration for User: {user_id} (Tenant: {TENANT_ID})")
+        print_info(f"Endpoints: {API_URLS}")
     else:
         user_id = input("Enter your User ID (email): ")
 
@@ -317,14 +347,12 @@ def main():
         elif choice == "3":
             login_with_backup_code(auth)
         elif choice == "4":
-             uid, url, tid = setup_via_qr()
+             uid, urls, tid = setup_via_qr()
              if uid:
-                 save_config(uid, url, tid)
-                 # Re-init Auth (this loads keys for new user or creates them)
+                 save_config(uid, urls, tid)
+                 # Re-init Auth
                  auth = get_authenticator(uid)
-                 # Auto-register logic? Or let user click register.
-                 # Let's verify status first or just let them click 1.
-                 print_info("Configuration updated. Please Register (Option 1) if not done yet.")
+                 print_info("Configuration updated.")
         elif choice == "5":
             print("Bye!")
             break

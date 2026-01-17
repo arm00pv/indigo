@@ -17,3 +17,7 @@ To link your device to your organization:
 ## Using the App
 - **Login**: Select "Login" to receive a push notification or decrypt a challenge.
 - **Backup Codes**: If you lose your device, use one of the emergency backup codes saved during registration.
+
+## Context-Aware Authentication
+If a request is critical (e.g., Money Transfer), the app will display the action details (Context).
+**Always verify that the displayed action matches what you are trying to do.**

@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-01-16
+### Added
+- **Context-Aware Authentication**:
+    - Backend now supports attaching a `context` string (e.g., "Transfer $500") to the encrypted challenge.
+    - Mobile Client decrypts and displays this context, enforcing "What You See Is What You Sign" (WYSIWYS).
+- **Client Redundancy**:
+    - Mobile Client now supports multiple API endpoints (Failover List).
+    - `send_request` automatically retries backup endpoints if the primary is unreachable.
+- **Documentation**: Updated User Guide with Context-Aware Auth instructions.
+
 ## [1.2.0] - 2026-01-16
 ### Added
 - **Observability**:

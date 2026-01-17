@@ -1,5 +1,6 @@
 from mfa_sdk.crypto import CryptoUtils
 from mfa_sdk.common import get_duress_otp
+import json
 
 class Authenticator:
     def __init__(self, user_id):
@@ -25,6 +26,8 @@ class Authenticator:
     def decrypt_otp(self, encrypted_otp_blob, pin):
         """
         Decrypts the OTP sent by the verifier.
+        Returns tuple (otp_string, context_string_or_none).
+
         Requires the correct PIN or Duress PIN to access the private key.
         If Duress PIN is used, the OTP is stealthily modified.
         """
@@ -41,11 +44,24 @@ class Authenticator:
 
         try:
             plaintext = CryptoUtils.decrypt_data(self._private_key, encrypted_otp_blob)
-            otp = plaintext.decode('utf-8')
+            decoded = plaintext.decode('utf-8')
+
+            otp = decoded
+            context = None
+
+            # Try to parse as JSON Context-Aware Payload
+            try:
+                if decoded.strip().startswith('{'):
+                    data = json.loads(decoded)
+                    otp = data.get('otp', otp)
+                    context = data.get('context')
+            except:
+                pass # Legacy/Plain format
 
             if is_duress:
-                return get_duress_otp(otp)
-            return otp
+                otp = get_duress_otp(otp)
+
+            return otp, context
 
         except Exception as e:
-            raise Exception("Failed to decrypt OTP. Key mismatch or corrupted data.")
+            raise Exception(f"Failed to decrypt OTP: {e}")

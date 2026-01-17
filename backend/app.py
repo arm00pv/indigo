@@ -365,6 +365,7 @@ def register():
 def get_challenge():
     data = request.json
     user_id = data.get('user_id')
+    context = data.get('context')
 
     allowed, reason = check_policy_compliance(request.remote_addr)
     if not allowed:
@@ -396,7 +397,7 @@ def get_challenge():
     challenge.created_at = datetime.datetime.now()
     db.session.commit()
 
-    encrypted_blob = verifier.encrypt_otp_for_user(user_id, otp)
+    encrypted_blob = verifier.encrypt_otp_for_user(user_id, otp, context=context)
     log_and_record("CHALLENGE", user_id, "SUCCESS", "OTP generated")
 
     # Push Notification Simulation

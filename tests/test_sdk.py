@@ -25,11 +25,25 @@ class TestMFASDK:
         encrypted = verifier.encrypt_otp_for_user(authenticator.user_id, original_otp)
 
         # User Decrypts
-        decrypted_otp = authenticator.decrypt_otp(encrypted, pin="1234")
+        decrypted_otp, context = authenticator.decrypt_otp(encrypted, pin="1234")
 
         # Verify
+        assert context is None
         assert decrypted_otp == original_otp
         assert verifier.verify_otp(original_otp, decrypted_otp)
+
+    def test_context_aware_auth(self, verifier, authenticator):
+        pub_key = authenticator.get_public_key_pem()
+        verifier.register_user(authenticator.user_id, pub_key)
+
+        original_otp = "123456"
+        ctx_msg = "Transfer $500"
+        encrypted = verifier.encrypt_otp_for_user(authenticator.user_id, original_otp, context=ctx_msg)
+
+        decrypted_otp, context = authenticator.decrypt_otp(encrypted, pin="1234")
+
+        assert decrypted_otp == original_otp
+        assert context == ctx_msg
 
     def test_wrong_pin(self, verifier, authenticator):
         pub_key = authenticator.get_public_key_pem()
