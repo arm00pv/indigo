@@ -6,6 +6,20 @@ This guide covers the deployment, configuration, and client implementation for *
 
 ## 🏗️ 1. Backend Deployment
 
+### Smart Installer (Recommended)
+Use `scripts/install_lamp.sh` for an automated setup on Ubuntu/Debian.
+
+#### Usage
+```bash
+./scripts/install_lamp.sh -d auth.example.com -e admin@example.com -y
+```
+**Flags:**
+- `-d`: Domain Name.
+- `-e`: Email for SSL (Let's Encrypt).
+- `-y`: Non-interactive mode (Yes to all).
+- `-u`: Skip UFW firewall configuration.
+- `-s`: Skip SSL configuration.
+
 ### A. Linux LAMP Server (Apache + Gunicorn)
 Standard deployment for a single Linux server (Ubuntu/Debian/CentOS).
 

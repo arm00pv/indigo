@@ -42,6 +42,13 @@ This guide helps end-users, administrators, and developers troubleshoot common i
 - **If it matches what you are doing:** Click "Approve".
 - **If you did NOT initiate this:** Click "Reject" and contact security immediately.
 
+### ⚠️ Impossible Travel Detected
+**Symptom:** You receive an "Abuse" alert or your account is locked after traveling.
+**Cause:** You logged in from two locations that are physically impossible to travel between in the elapsed time (e.g., New York then London 1 hour later).
+**Solution:**
+- If you are using a VPN, this might trigger the alert.
+- Contact Admin to verify the locations and unlock if it was a false positive.
+
 ---
 
 ## 🖥️ Admin Dashboard

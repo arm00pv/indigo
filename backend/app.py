@@ -13,6 +13,7 @@ import secrets
 import time
 import base64
 import io
+import math
 import qrcode
 from flask import Flask, request, jsonify, render_template, Response, g, send_file
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
@@ -63,6 +64,33 @@ verifier = Verifier(verifier_id="Indigo-MFA-Backend")
 
 # --- Helper Functions ---
 
+def get_ip_location(ip):
+    # Mock/Real implementation
+    if ip in ["127.0.0.1", "localhost", "::1"] or ip.startswith("192.168.") or ip.startswith("10."):
+        return "Local Network", None, None
+    try:
+        resp = requests.get(f"http://ip-api.com/json/{ip}", timeout=2)
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get('status') == 'success':
+                loc_str = f"{data.get('city')}, {data.get('country')}"
+                return loc_str, data.get('lat'), data.get('lon')
+    except:
+        pass
+    return "Unknown", None, None
+
+def calculate_distance(lat1, lon1, lat2, lon2):
+    # Haversine formula
+    R = 6371 # Earth radius in km
+    dLat = math.radians(lat2 - lat1)
+    dLon = math.radians(lon2 - lon1)
+    a = math.sin(dLat/2) * math.sin(dLat/2) + \
+        math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * \
+        math.sin(dLon/2) * math.sin(dLon/2)
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    d = R * c
+    return d
+
 def init_db_data():
     """Initialize DB tables if not exist."""
     # Ensure app context if not present (handled by caller usually, but safe to check)
@@ -100,6 +128,12 @@ def init_db_data():
         if 'last_login_at' not in columns:
             logger.info("Migrating DB: Adding last_login_at to user_security")
             db.session.execute(db.text("ALTER TABLE user_security ADD COLUMN last_login_at DATETIME"))
+        if 'last_lat' not in columns:
+            logger.info("Migrating DB: Adding last_lat to user_security")
+            db.session.execute(db.text("ALTER TABLE user_security ADD COLUMN last_lat FLOAT"))
+        if 'last_lon' not in columns:
+            logger.info("Migrating DB: Adding last_lon to user_security")
+            db.session.execute(db.text("ALTER TABLE user_security ADD COLUMN last_lon FLOAT"))
         db.session.commit()
     except Exception as e:
         logger.warning(f"Migration check failed: {e}")
@@ -188,6 +222,12 @@ def require_admin(f):
 def log_and_record(event_type, user_id, status, details=""):
     ip_address = request.remote_addr if request else "unknown"
     tenant_id = getattr(g, 'tenant_id', 'unknown')
+
+    # Enrich with Location if Auth related
+    if status in ["SUCCESS", "DURESS", "ABUSE"] and event_type in ["AUTH", "CHALLENGE"]:
+        loc_str, _, _ = get_ip_location(ip_address)
+        if loc_str != "Unknown":
+            details = f"{details} [{loc_str}]"
 
     log_msg = f"[{event_type}] Tenant: {tenant_id} | User: {user_id} | IP: {ip_address} | Status: {status} | {details}"
 
@@ -505,6 +545,18 @@ def verify_otp():
         # Security Tracking
         current_ip = request.remote_addr
         current_ua = request.headers.get('User-Agent')
+        loc_str, lat, lon = get_ip_location(current_ip)
+
+        # Impossible Travel Check
+        if sec_record.last_lat and sec_record.last_lon and lat and lon and sec_record.last_login_at:
+            # Calculate time diff in hours
+            time_diff = (datetime.datetime.now() - sec_record.last_login_at).total_seconds() / 3600
+            dist = calculate_distance(sec_record.last_lat, sec_record.last_lon, lat, lon)
+
+            if dist > 100: # Ignore small jumps
+                speed = dist / time_diff if time_diff > 0 else 99999
+                if speed > 800: # 800 km/h
+                    log_and_record("AUTH", user_id, "ABUSE", f"Impossible Travel: {dist:.0f}km in {time_diff:.1f}h ({speed:.0f} km/h)")
 
         if sec_record.last_ip and sec_record.last_ip != current_ip:
             log_and_record("AUTH", user_id, "WARN", f"IP Change: {sec_record.last_ip} -> {current_ip}")
@@ -512,6 +564,8 @@ def verify_otp():
         sec_record.last_ip = current_ip
         sec_record.last_user_agent = current_ua
         sec_record.last_login_at = datetime.datetime.now()
+        sec_record.last_lat = lat
+        sec_record.last_lon = lon
 
         db.session.commit()
 

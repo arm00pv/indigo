@@ -55,6 +55,8 @@ class UserSecurity(db.Model):
     last_ip = db.Column(db.String(50), nullable=True)
     last_user_agent = db.Column(db.String(255), nullable=True)
     last_login_at = db.Column(db.DateTime, nullable=True)
+    last_lat = db.Column(db.Float, nullable=True)
+    last_lon = db.Column(db.Float, nullable=True)
 
 class SystemSetting(db.Model):
     __tablename__ = 'system_settings'
