@@ -44,9 +44,11 @@ class IndigoCrypto {
     final sharedBytes = await sharedSecret.extractBytes();
 
     // 6. Derive AES Key (HKDF)
+    // Salt (nonce) must be 32 bytes of zeros to match Python's salt=None
     final aesKeyMaterial = await hkdf.deriveKey(
       secretKey: SecretKey(sharedBytes),
-      nonce: [], // Empty/Null salt as per implementation
+      nonce: List.filled(32, 0),
+      info: utf8.encode('mfa-protocol-encryption'),
     );
 
     // 7. Decrypt (AES-GCM)

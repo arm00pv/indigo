@@ -21,4 +21,4 @@ ENV FLASK_APP=backend.app
 EXPOSE 5000
 
 # Run with Gunicorn (Initialize DB first)
-CMD ["sh", "-c", "flask init-db && gunicorn -w 4 -b 0.0.0.0:5000 --access-logfile - backend.app:app"]
+CMD ["sh", "-c", "flask init-db && gunicorn -w 1 -b 0.0.0.0:5000 --access-logfile - backend.app:app"]

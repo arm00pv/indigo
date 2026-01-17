@@ -699,6 +699,95 @@ def admin_prune_logs():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/admin/provision/pdf', methods=['POST'])
+@require_admin
+def generate_pdf_provisioning():
+    user_id = request.json.get('user_id')
+    if not user_id:
+        return jsonify({"error": "Missing user_id"}), 400
+
+    # Generate Config
+    config = {
+        "url": request.host_url.rstrip('/'),
+        "tenant_id": g.tenant_id,
+        "user_id": user_id
+    }
+    payload_str = json.dumps(config)
+    smart_code = base64.b64encode(payload_str.encode('utf-8')).decode('utf-8')
+
+    # Generate PDF
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=letter)
+    width, height = letter
+
+    c.setFont("Helvetica-Bold", 24)
+    c.drawString(72, height - 72, "Indigo MFA - Enrollment")
+
+    c.setFont("Helvetica", 14)
+    c.drawString(72, height - 100, f"Organization: {g.tenant_id}")
+    c.drawString(72, height - 120, f"User ID: {user_id}")
+
+    c.drawString(72, height - 160, "Instructions:")
+    c.setFont("Helvetica", 12)
+    c.drawString(90, height - 180, "1. Download the Indigo Authenticator App.")
+    c.drawString(90, height - 200, "2. Select 'Setup via QR / Smart Code'.")
+    c.drawString(90, height - 220, "3. Scan the QR code below or enter the Smart Code.")
+
+    # QR Code
+    qr = qrcode.QRCode(box_size=5, border=2)
+    qr.add_data(payload_str)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+
+    qr_buf = io.BytesIO()
+    img.save(qr_buf, format='PNG')
+    qr_buf.seek(0)
+
+    c.drawImage(ImageReader(qr_buf), 72, height - 450, width=200, height=200)
+
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(72, height - 480, "Smart Code (Manual Entry):")
+
+    text_obj = c.beginText(72, height - 500)
+    text_obj.setFont("Courier", 10)
+    # Split smart code into chunks
+    chunks = [smart_code[i:i+60] for i in range(0, len(smart_code), 60)]
+    for chunk in chunks:
+        text_obj.textLine(chunk)
+    c.drawText(text_obj)
+
+    c.showPage()
+    c.save()
+    buf.seek(0)
+
+    return send_file(buf, as_attachment=True, download_name=f"indigo_enroll_{user_id}.pdf", mimetype='application/pdf')
+
+@app.route('/admin/provision/bulk', methods=['POST'])
+@require_admin
+def bulk_provision():
+    raw_text = request.json.get('user_ids')
+    if not raw_text:
+        return jsonify({"error": "Missing user_ids"}), 400
+
+    user_ids = [u.strip() for u in raw_text.replace(',', '\n').split('\n') if u.strip()]
+    results = []
+
+    for uid in user_ids:
+        # Check if exists (Optional, not strictly required for provisioning payload)
+        user = User.query.get((uid, g.tenant_id))
+        status = "Existing" if user else "Ready to Enroll"
+
+        config = {
+            "url": request.host_url.rstrip('/'),
+            "tenant_id": g.tenant_id,
+            "user_id": uid
+        }
+        payload = json.dumps(config)
+        smart = base64.b64encode(payload.encode('utf-8')).decode('utf-8')
+        results.append({"user_id": uid, "status": status, "smart_code": smart})
+
+    return jsonify(results)
+
 @app.route('/user/<user_id>/revoke', methods=['DELETE'])
 @require_admin
 def revoke_user(user_id):

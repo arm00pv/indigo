@@ -28,6 +28,7 @@ Read the **[Mobile Developer Guide](MOBILE_DEV_GUIDE.md)** to build the native A
 - **[User Guide](docs/USER_GUIDE.md)**: For end-users enrolling via Smart Code/QR.
 - **[Validator Guide](docs/VALIDATOR_GUIDE.md)**: For system operators and auditors.
 - **[Flutter Developer Guide](FLUTTER_DEV_GUIDE.md)**: Implementation specs for the Flutter Mobile App.
+- **[Knowledge Base](docs/KNOWLEDGE_BASE.md)**: Troubleshooting guide for common issues.
 
 ## 🔧 Architecture
 

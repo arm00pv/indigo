@@ -55,7 +55,8 @@ Environment="FLASK_APP=backend.app"
 Environment="ADMIN_API_KEY=$ADMIN_KEY"
 # Environment="ALERT_WEBHOOK_URL="
 ExecStartPre=$APP_DIR/venv/bin/flask init-db
-ExecStart=$APP_DIR/venv/bin/gunicorn --workers 3 --bind unix:$APP_DIR/indigo.sock -m 007 backend.app:app
+# Using 1 worker to ensure SQLite safety (database locking). Increase if using PostgreSQL.
+ExecStart=$APP_DIR/venv/bin/gunicorn --workers 1 --bind unix:$APP_DIR/indigo.sock -m 007 backend.app:app
 
 [Install]
 WantedBy=multi-user.target
