@@ -1,6 +1,6 @@
 # Mobile App Development Guide
 
-This guide provides technical specifications and implementation details for building the **Indigo MFA** mobile authenticator app on Android (Kotlin) and iOS (Swift).
+This guide provides technical specifications and implementation details for building the **Indigo MFA** mobile authenticator app. It covers the reference **Flutter** implementation as well as specifications for native **Android (Kotlin)** and **iOS (Swift)** apps.
 
 ---
 
@@ -13,10 +13,110 @@ The mobile app acts as a **Secure Enclave** that stores the user's Private Key. 
 2.  **Registration:** Export Public Key (PEM/DER) and send to server.
 3.  **Authentication:** Receive encrypted OTP, decrypt it using Private Key (protected by PIN/Biometric), and return plaintext OTP.
 4.  **Duress Mode:** Detect "Duress PIN" and modify the OTP to signal silent alarm.
+5.  **Context Awareness:** Decrypt and display transaction context (e.g., "Transfer $500") for user verification.
 
 ---
 
-## 🤖 2. Android Implementation (Kotlin)
+## 🦋 2. Flutter Implementation (Reference App)
+
+This section details how to build and deploy the Flutter reference client found in `flutter_app/`.
+
+### Step 1: Initialize Project
+If starting from scratch:
+```bash
+flutter create indigo_authenticator
+cd indigo_authenticator
+```
+
+### Step 2: Add Dependencies
+Update `pubspec.yaml` to include necessary packages for Crypto, Storage, Networking, and QR Scanning.
+
+```yaml
+dependencies:
+  flutter:
+    sdk: flutter
+  # Networking
+  http: ^1.1.0
+  # Security & Storage
+  flutter_secure_storage: ^9.0.0
+  cryptography: ^2.5.0
+  # QR Code Scanning
+  mobile_scanner: ^3.5.5
+  permission_handler: ^11.0.0
+```
+Run `flutter pub get` to install.
+
+### Step 3: Configure Permissions
+**Android (`android/app/src/main/AndroidManifest.xml`):**
+```xml
+<uses-permission android:name="android.permission.INTERNET"/>
+<uses-permission android:name="android.permission.CAMERA"/>
+```
+
+**iOS (`ios/Runner/Info.plist`):**
+```xml
+<key>NSCameraUsageDescription</key>
+<string>Camera permission is required for QR Code scanning.</string>
+```
+
+### Step 4: Cryptography Implementation (`lib/crypto.dart`)
+The core security relies on ECIES (P-256 + HKDF + AES-GCM). Ensure the HKDF parameters match the backend:
+- **Salt/Nonce**: 32 bytes of zeros.
+- **Info**: `b'mfa-protocol-encryption'`.
+
+```dart
+// Snippet from lib/crypto.dart
+static Future<List<int>> decrypt(SimpleKeyPair keyPair, List<int> encryptedBlob) async {
+    // ... Extract Ephemeral Key, IV, Tag, Ciphertext ...
+
+    // Derive Shared Secret (ECDH)
+    final sharedSecret = await ecdh.sharedSecretKey(keyPair: keyPair, remotePublicKey: ephemeralKey);
+    final sharedBytes = await sharedSecret.extractBytes();
+
+    // Derive AES Key (HKDF)
+    // CRITICAL: Must match backend parameters
+    final aesKeyMaterial = await hkdf.deriveKey(
+      secretKey: SecretKey(sharedBytes),
+      nonce: List.filled(32, 0), // Salt = 32 null bytes
+      info: utf8.encode('mfa-protocol-encryption'),
+    );
+
+    // Decrypt (AES-GCM)
+    // ...
+}
+```
+
+### Step 5: Secure Storage & Key Management
+Use `flutter_secure_storage` to persist sensitive data.
+- **Private Key**: Serialize and store in secure storage (Keychain/Keystore).
+- **App Configuration**: Store `user_id`, `tenant_id`, and `base_url`.
+
+### Step 6: Duress & Context Logic
+Implement the logic to handle special payloads and PINs.
+
+**Context-Awareness:**
+```dart
+// Check if decrypted payload is JSON
+if (plaintext.trim().startsWith('{')) {
+    final data = jsonDecode(plaintext);
+    String context = data['context'];
+    // Display Alert Dialog with context
+}
+```
+
+**Duress Mode:**
+```dart
+if (enteredPin == duressPin) {
+    // Mod 10 Logic to signal distress
+    int lastDigit = int.parse(otp.substring(otp.length - 1));
+    int newLast = (lastDigit + 1) % 10;
+    otp = otp.substring(0, otp.length - 1) + newLast.toString();
+}
+```
+
+---
+
+## 🤖 3. Android Implementation (Kotlin)
 
 ### Dependencies (build.gradle)
 Recommended libraries for modern Android security.
@@ -34,58 +134,29 @@ dependencies {
 ```kotlin
 import com.google.crypto.tink.HybridDecrypt
 import com.google.crypto.tink.KeysetHandle
-import com.google.crypto.tink.hybrid.HybridConfig
-import com.google.crypto.tink.integration.android.AndroidKeysetManager
+// ...
 
 class Authenticator(context: Context) {
-
-    private val PREF_FILE = "indigo_mfa_prefs"
-    private val TINK_KEYSET_NAME = "indigo_keyset"
-    private var keysetHandle: KeysetHandle? = null
-
-    init {
-        HybridConfig.register()
-        // Initialize or Load Keyset from Android Keystore
-        val masterKeyUri = "android-keystore://master_key"
-
-        keysetHandle = AndroidKeysetManager.Builder()
-            .withSharedPref(context, TINK_KEYSET_NAME, PREF_FILE)
-            .withKeyTemplate(HybridKeyTemplates.ECIES_P256_HKDF_HMAC_SHA256_AES128_GCM)
-            .withMasterKeyUri(masterKeyUri)
-            .build()
-            .keysetHandle
-    }
-
-    fun getPublicKeyPem(): String {
-        // Extract public key from keysetHandle and convert to PEM format
-        // Note: Tink exports raw keys, you may need a helper to wrap in PEM header
-        val publicHandle = keysetHandle!!.publicKeysetHandle
-        // ... Implementation to export public key bytes ...
-        return pemString
-    }
+    // ... Keyset Management ...
 
     fun decryptOtp(encryptedData: ByteArray, pin: String, storedPin: String, duressPin: String?): String {
-        // 1. PIN Check (In production, use PIN to encrypt the Keyset itself!)
+        // 1. PIN Check
         val isDuress = (duressPin != null && pin == duressPin)
-        if (pin != storedPin && !isDuress) {
-            throw Exception("Invalid PIN")
-        }
+        if (pin != storedPin && !isDuress) throw Exception("Invalid PIN")
 
         // 2. Decrypt
         val hybridDecrypt = keysetHandle!!.getPrimitive(HybridDecrypt::class.java)
         val decryptedBytes = hybridDecrypt.decrypt(encryptedData, null)
-        val otp = String(decryptedBytes, Charsets.UTF_8)
+        val plaintext = String(decryptedBytes, Charsets.UTF_8)
 
-        // 3. Duress Logic
-        return if (isDuress) {
-            modifyForDuress(otp)
-        } else {
-            otp
-        }
+        // 3. Context & OTP Extraction (JSON Parsing)
+        // ...
+
+        // 4. Duress Logic
+        return if (isDuress) modifyForDuress(otp) else otp
     }
 
     private fun modifyForDuress(otp: String): String {
-        // Increment last digit (Mod 10)
         val lastDigit = otp.last().digitToInt()
         val newDigit = (lastDigit + 1) % 10
         return otp.dropLast(1) + newDigit
@@ -95,7 +166,7 @@ class Authenticator(context: Context) {
 
 ---
 
-## 🍏 3. iOS Implementation (Swift)
+## 🍏 4. iOS Implementation (Swift)
 
 ### Dependencies
 No external dependencies required. Use native **CryptoKit** and **LocalAuthentication**.
@@ -103,58 +174,33 @@ No external dependencies required. Use native **CryptoKit** and **LocalAuthentic
 ### Class Structure: `Authenticator.swift`
 
 ```swift
-import Foundation
 import CryptoKit
 import Security
 
 class Authenticator {
 
-    private let tag = "com.indigo.privateKey"
+    // ... Key Generation & Retrieval ...
 
-    // 1. Generate / Retrieve Key
-    func getPrivateKey() -> P256.KeyAgreement.PrivateKey {
-        // Check Keychain first
-        if let storedKey = retrieveKeyFromKeychain() {
-            return storedKey
-        }
-
-        // Generate New
-        let privateKey = P256.KeyAgreement.PrivateKey()
-        saveKeyToKeychain(key: privateKey)
-        return privateKey
-    }
-
-    // 2. Export Public Key
-    func getPublicKeyPEM() -> String {
-        let key = getPrivateKey()
-        let pubKey = key.publicKey
-        let x963 = pubKey.x963Representation
-        return x963.base64EncodedString() // Send as Base64/Hex to server
-    }
-
-    // 3. Decrypt OTP
     func decryptOTP(encryptedData: Data, userPin: String, actualPin: String, duressPin: String?) throws -> String {
 
-        // PIN Validation logic here...
         let isDuress = (duressPin != null && userPin == duressPin)
 
-        // Reconstruct Ephemeral Key & Ciphertext from encryptedData blob
-        // (Assuming format: [Len][PubKey][Nonce][Cipher])
-        // ... Parsing logic ...
+        // ... Reconstruct Ephemeral Key & Ciphertext ...
 
         // Perform ECIES
         let privateKey = getPrivateKey()
         let sharedSecret = try privateKey.sharedSecretFromKeyAgreement(with: ephemeralPubKey)
         let symmetricKey = sharedSecret.hkdfDerivedSymmetricKey(
             using: SHA256.self,
-            salt: Data(),
+            salt: Data(count: 32), // 32 null bytes
             sharedInfo: "mfa-protocol-encryption".data(using: .utf8)!,
             outputByteCount: 32
         )
 
-        let sealedBox = try AES.GCM.SealedBox(nonce: nonce, ciphertext: ciphertext, tag: tag)
-        let decryptedData = try AES.GCM.open(sealedBox, using: symmetricKey)
-        let otp = String(data: decryptedData, encoding: .utf8)!
+        // ... AES-GCM Decrypt ...
+        let plaintext = String(data: decryptedData, encoding: .utf8)!
+
+        // ... JSON Parsing for Context ...
 
         return isDuress ? modifyForDuress(otp) : otp
     }
@@ -164,16 +210,14 @@ class Authenticator {
         let newDigit = (digit + 1) % 10
         return String(otp.dropLast(1)) + String(newDigit)
     }
-
-    // ... Keychain Helper Methods ...
 }
 ```
 
 ---
 
-## 🔌 4. Networking Logic
+## 🔌 5. Networking Logic
 
-The app needs two simple API calls.
+The app needs the following API calls. Ensure `X-Tenant-ID` header is sent with every request.
 
 ### A. Register
 *   **Endpoint:** `POST /register`
@@ -181,10 +225,12 @@ The app needs two simple API calls.
 *   **Action:** Send the PEM (hex encoded) after key generation.
 
 ### B. Authenticate
-*   **Step 1: Poll/Receive Challenge** (via Push Notification or Manual Request)
+*   **Step 1: Request Challenge**
     *   **Endpoint:** `POST /auth/challenge`
+    *   **Payload:** `{ "user_id": "..." }`
     *   **Response:** `{ "encrypted_challenge_hex": "..." }`
-*   **Step 2: Decrypt Locally** (using `Authenticator.decryptOTP`)
+*   **Step 2: Decrypt Locally** (using `Authenticator.decrypt`)
+    *   Verify Context if present.
 *   **Step 3: Submit OTP**
     *   **Endpoint:** `POST /auth/verify`
     *   **Payload:** `{ "user_id": "...", "otp": "123456" }`

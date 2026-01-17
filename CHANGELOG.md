@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-01-17
+### Added
+- **Flutter App**: Complete reference implementation in `flutter_app/`.
+- **Enterprise Features**:
+    - Bulk Provisioning (`/admin/provision/bulk`) via CSV/List.
+    - PDF Enrollment Sheets (`/admin/provision/pdf`) with QR Codes.
+    - Geo-Location Tracking (City/Country) for security events.
+    - Backup and Restore endpoints for disaster recovery.
+- **Documentation**:
+    - Merged Flutter and Native guides into `MOBILE_DEV_GUIDE.md`.
+    - Added `KNOWLEDGE_BASE.md`.
+### Fixed
+- **Crypto**: Aligned Flutter HKDF parameters with backend.
+- **Stability**: Enforced single-worker mode for SQLite.
+
 ## [1.3.0] - 2026-01-16
 ### Added
 - **Context-Aware Authentication**:
