@@ -14,7 +14,7 @@ import time
 import base64
 import io
 import qrcode
-from flask import Flask, request, jsonify, render_template, Response, g
+from flask import Flask, request, jsonify, render_template, Response, g, send_file
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter

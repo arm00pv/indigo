@@ -39,3 +39,13 @@ class TestProvisioning:
         payload = json.loads(data["payload"])
         assert payload["user_id"] == "qr_test"
         assert payload["tenant_id"] == "default"
+
+    def test_pdf_generation(self, client):
+        resp = client.post('/admin/provision/pdf',
+            json={"user_id": "pdf_user"},
+            headers={'X-Admin-Key': 'admin-key'}
+        )
+        assert resp.status_code == 200
+        assert resp.headers['Content-Type'] == 'application/pdf'
+        # Basic check for PDF magic bytes
+        assert resp.data.startswith(b'%PDF')
