@@ -52,6 +52,9 @@ class UserSecurity(db.Model):
     failed_attempts = db.Column(db.Integer, default=0)
     locked_until = db.Column(db.DateTime, nullable=True)
     lock_type = db.Column(db.String(20), default='NONE') # NONE, TEMP, PERMANENT
+    last_ip = db.Column(db.String(50), nullable=True)
+    last_user_agent = db.Column(db.String(255), nullable=True)
+    last_login_at = db.Column(db.DateTime, nullable=True)
 
 class SystemSetting(db.Model):
     __tablename__ = 'system_settings'

@@ -16,6 +16,9 @@ import io
 import qrcode
 from flask import Flask, request, jsonify, render_template, Response, g
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.utils import ImageReader
 from backend.models import db, User, ActiveChallenge, AuditLog, UserSecurity, SystemSetting, IPBlacklist, Tenant, ApiKey
 from backend.utils import generate_backup_codes
 
@@ -83,6 +86,23 @@ def init_db_data():
         db.session.add(SystemSetting(key='log_retention_days', value='90', tenant_id="default"))
         db.session.commit()
         logger.info(f"Initialized Database with Admin Key hash: {h[:8]}...")
+
+    # Check for missing columns (manual migration)
+    try:
+        inspector = db.inspect(db.engine)
+        columns = [c['name'] for c in inspector.get_columns('user_security')]
+        if 'last_ip' not in columns:
+            logger.info("Migrating DB: Adding last_ip to user_security")
+            db.session.execute(db.text("ALTER TABLE user_security ADD COLUMN last_ip TEXT"))
+        if 'last_user_agent' not in columns:
+            logger.info("Migrating DB: Adding last_user_agent to user_security")
+            db.session.execute(db.text("ALTER TABLE user_security ADD COLUMN last_user_agent TEXT"))
+        if 'last_login_at' not in columns:
+            logger.info("Migrating DB: Adding last_login_at to user_security")
+            db.session.execute(db.text("ALTER TABLE user_security ADD COLUMN last_login_at DATETIME"))
+        db.session.commit()
+    except Exception as e:
+        logger.warning(f"Migration check failed: {e}")
 
 @app.cli.command("init-db")
 def init_db_command():
@@ -481,6 +501,18 @@ def verify_otp():
         sec_record.failed_attempts = 0
         sec_record.locked_until = None
         sec_record.lock_type = 'NONE'
+
+        # Security Tracking
+        current_ip = request.remote_addr
+        current_ua = request.headers.get('User-Agent')
+
+        if sec_record.last_ip and sec_record.last_ip != current_ip:
+            log_and_record("AUTH", user_id, "WARN", f"IP Change: {sec_record.last_ip} -> {current_ip}")
+
+        sec_record.last_ip = current_ip
+        sec_record.last_user_agent = current_ua
+        sec_record.last_login_at = datetime.datetime.now()
+
         db.session.commit()
 
         if status == VerificationStatus.DURESS:
@@ -570,7 +602,10 @@ def admin_users():
             "status": status,
             "failed_attempts": fails,
             "push_enabled": bool(u.push_endpoint),
-            "backup_codes_count": codes_count
+            "backup_codes_count": codes_count,
+            "last_ip": s.last_ip if s else None,
+            "last_user_agent": s.last_user_agent if s else None,
+            "last_login_at": s.last_login_at.isoformat() if s and s.last_login_at else None
         })
     return jsonify(users_list)
 
