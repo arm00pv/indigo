@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-01-17
+### Added
+- **Smart Installer v2.1**:
+    - PostgreSQL Support (`-db postgres`): Auto-installs and configures Postgres DB/User.
+    - Automated Backups (`-b`): Sets up a daily cron job for `flask backup`.
+    - Uninstallation (`--uninstall`): Cleanly removes the service and files.
+    - Health Check: Verifies deployment success.
+- **CLI**: Added `flask backup` command for automated maintenance.
+
+## [2.0.0] - 2026-01-17
+### Added
+- **Impossible Travel Detection**:
+    - Tracks User Geo-Location (Lat/Lon).
+    - Flags logins with >800km/h travel speed as `ABUSE`.
+- **Smart Installer v2.0**:
+    - Automated SSL (Certbot) and Firewall (UFW).
+    - Interactive and Non-Interactive (`-y`) modes.
+
 ## [1.8.0] - 2026-01-17
 ### Added
 - **Flutter App**: Complete reference implementation in `flutter_app/`.
