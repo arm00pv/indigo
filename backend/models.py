@@ -70,3 +70,12 @@ class IPBlacklist(db.Model):
     tenant_id = db.Column(db.String(36), db.ForeignKey('tenants.id'), primary_key=True)
     reason = db.Column(db.String(255))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class NotificationChannel(db.Model):
+    __tablename__ = 'notification_channels'
+    id = db.Column(db.String(36), primary_key=True, default=gen_uuid)
+    tenant_id = db.Column(db.String(36), db.ForeignKey('tenants.id'), nullable=False)
+    channel_type = db.Column(db.String(20), nullable=False) # WEBHOOK, EMAIL
+    config = db.Column(db.Text, nullable=False) # JSON
+    events = db.Column(db.Text, nullable=False) # JSON List
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)

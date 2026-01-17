@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-01-17
+### Added
+- **Notifications & Alerts**:
+    - **Multi-Channel**: Configure per-tenant Webhook and Email (SMTP) alerts for critical events (Duress, Abuse).
+    - **Dispatch System**: Backend logic to route alerts based on configured channels.
+- **Dashboard**:
+    - New "Alert Channels" card to manage and test notification settings.
+
 ## [2.1.0] - 2026-01-17
 ### Added
 - **Smart Installer v2.1**:

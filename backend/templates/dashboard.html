@@ -309,6 +309,25 @@
                 </div>
             </div>
 
+            <!-- Alerts Config -->
+            <div class="card mb-4">
+                <div class="card-header bg-warning text-dark d-flex justify-content-between align-items-center">
+                    <span><i class="fas fa-bell me-2"></i>Alert Channels</span>
+                    <button class="btn btn-sm btn-outline-dark" onclick="fetchChannels()"><i class="fas fa-sync"></i></button>
+                </div>
+                <div class="card-body">
+                    <div class="input-group mb-3">
+                        <select id="channel-type" class="form-select" style="max-width: 150px;">
+                            <option value="WEBHOOK">Webhook</option>
+                            <option value="EMAIL">Email</option>
+                        </select>
+                        <input type="text" id="channel-target" class="form-control" placeholder="URL or Email Address">
+                        <button class="btn btn-dark" onclick="addChannel()">Add Channel</button>
+                    </div>
+                    <ul class="list-group" id="channel-list"></ul>
+                </div>
+            </div>
+
             <!-- Audit Logs -->
             <div class="card">
                 <div class="card-header bg-transparent d-flex justify-content-between align-items-center">
@@ -783,7 +802,63 @@
 
     // Refresh every 3 seconds
     fetchData();
+    fetchChannels();
     setInterval(fetchData, 3000);
+
+    async function fetchChannels() {
+        if (!ADMIN_KEY) return;
+        try {
+            const res = await fetch('/admin/notifications', {headers: {'X-Admin-Key': ADMIN_KEY}});
+            const channels = await res.json();
+            const list = document.getElementById('channel-list');
+            list.innerHTML = '';
+            channels.forEach(c => {
+                let details = c.type === 'WEBHOOK' ? c.config.url : c.config.email;
+                list.innerHTML += `<li class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                        <span class="badge bg-secondary me-2">${c.type}</span>
+                        ${details}
+                    </div>
+                    <button class="btn btn-sm btn-outline-danger" onclick="deleteChannel('${c.id}')"><i class="fas fa-trash"></i></button>
+                </li>`;
+            });
+        } catch(e) {}
+    }
+
+    async function addChannel() {
+        const type = document.getElementById('channel-type').value;
+        const target = document.getElementById('channel-target').value;
+        if(!target) return;
+
+        let config = {};
+        if(type === 'WEBHOOK') config = {url: target};
+        if(type === 'EMAIL') config = {email: target, host: 'smtp.gmail.com', port: 587}; // Simplified defaults
+
+        try {
+            await fetch('/admin/notifications', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'X-Admin-Key': ADMIN_KEY},
+                body: JSON.stringify({
+                    type: type,
+                    config: config,
+                    events: ['DURESS', 'ABUSE']
+                })
+            });
+            document.getElementById('channel-target').value = '';
+            fetchChannels();
+        } catch(e) { alert("Error adding channel"); }
+    }
+
+    async function deleteChannel(id) {
+        if(!confirm("Delete channel?")) return;
+        try {
+            await fetch(`/admin/notifications/${id}`, {
+                method: 'DELETE',
+                headers: {'X-Admin-Key': ADMIN_KEY}
+            });
+            fetchChannels();
+        } catch(e) {}
+    }
 </script>
 
 </body>

@@ -20,7 +20,7 @@ from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.utils import ImageReader
-from backend.models import db, User, ActiveChallenge, AuditLog, UserSecurity, SystemSetting, IPBlacklist, Tenant, ApiKey
+from backend.models import db, User, ActiveChallenge, AuditLog, UserSecurity, SystemSetting, IPBlacklist, Tenant, ApiKey, NotificationChannel
 from backend.utils import generate_backup_codes
 
 # Add project root to path so we can import mfa_sdk
@@ -219,6 +219,44 @@ def require_admin(f):
         return jsonify({"error": "Unauthorized. Invalid Admin Key."}), 401
     return decorated_function
 
+def dispatch_alerts(event_type, user_id, status, details):
+    tenant_id = getattr(g, 'tenant_id', None)
+    if not tenant_id or tenant_id == 'unknown':
+        return
+
+    try:
+        channels = NotificationChannel.query.filter_by(tenant_id=tenant_id).all()
+        for ch in channels:
+            try:
+                events = json.loads(ch.events)
+                if status not in events and event_type not in events:
+                    continue
+
+                config = json.loads(ch.config)
+                msg_body = f"Indigo MFA Alert\nTenant: {tenant_id}\nEvent: {event_type}\nUser: {user_id}\nStatus: {status}\nDetails: {details}"
+
+                if ch.channel_type == 'WEBHOOK':
+                    requests.post(config['url'], json={"text": msg_body}, timeout=2)
+                elif ch.channel_type == 'EMAIL':
+                    import smtplib
+                    from email.message import EmailMessage
+                    msg = EmailMessage()
+                    msg.set_content(msg_body)
+                    msg['Subject'] = f"Indigo Alert: {status} - {user_id}"
+                    msg['From'] = config.get('sender', 'alert@indigo.local')
+                    msg['To'] = config['email']
+
+                    s = smtplib.SMTP(config['host'], int(config.get('port', 25)))
+                    if config.get('user') and config.get('pass'):
+                        s.starttls()
+                        s.login(config['user'], config['pass'])
+                    s.send_message(msg)
+                    s.quit()
+            except Exception as e:
+                logger.error(f"Channel {ch.id} error: {e}")
+    except Exception as e:
+        logger.error(f"Dispatch error: {e}")
+
 def log_and_record(event_type, user_id, status, details=""):
     ip_address = request.remote_addr if request else "unknown"
     tenant_id = getattr(g, 'tenant_id', 'unknown')
@@ -237,6 +275,7 @@ def log_and_record(event_type, user_id, status, details=""):
         logger.critical(f"🚨 {status} SIGNAL: {log_msg}")
         send_webhook_alert(event_type, user_id, status, details)
         ACTIVE_THREATS.labels(status, tenant_id).inc()
+        dispatch_alerts(event_type, user_id, status, details)
     else:
         logger.warning(log_msg)
 
@@ -841,6 +880,43 @@ def bulk_provision():
         results.append({"user_id": uid, "status": status, "smart_code": smart})
 
     return jsonify(results)
+
+@app.route('/admin/notifications', methods=['GET', 'POST'])
+@require_admin
+def admin_notifications():
+    if request.method == 'POST':
+        data = request.json
+        ch_type = data.get('type')
+        config = data.get('config') # JSON object
+        events = data.get('events', []) # List of strings
+
+        if not ch_type or not config:
+            return jsonify({"error": "Missing type or config"}), 400
+
+        channel = NotificationChannel(
+            tenant_id=g.tenant_id,
+            channel_type=ch_type,
+            config=json.dumps(config),
+            events=json.dumps(events)
+        )
+        db.session.add(channel)
+        db.session.commit()
+        return jsonify({"message": "Channel created", "id": channel.id}), 201
+    else:
+        channels = NotificationChannel.query.filter_by(tenant_id=g.tenant_id).all()
+        return jsonify([{
+            "id": c.id,
+            "type": c.channel_type,
+            "config": json.loads(c.config),
+            "events": json.loads(c.events)
+        } for c in channels])
+
+@app.route('/admin/notifications/<channel_id>', methods=['DELETE'])
+@require_admin
+def admin_delete_notification(channel_id):
+    NotificationChannel.query.filter_by(id=channel_id, tenant_id=g.tenant_id).delete()
+    db.session.commit()
+    return jsonify({"message": "Channel deleted"}), 200
 
 @app.route('/user/<user_id>/revoke', methods=['DELETE'])
 @require_admin
