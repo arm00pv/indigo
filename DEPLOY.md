@@ -9,16 +9,37 @@ This guide covers the deployment, configuration, and client implementation for *
 ### Smart Installer (Recommended)
 Use `scripts/install_lamp.sh` for an automated setup on Ubuntu/Debian.
 
+#### Roles
+The installer supports three deployment roles:
+1.  **Validator (Default)**: Standard single-server setup using SQLite. Optimized for simplicity.
+2.  **Enterprise**: High-performance setup using PostgreSQL. Configures Gunicorn with increased concurrency.
+3.  **User**: Installs only the `indigo-mfa` CLI client for end-users on Linux.
+
 #### Usage
 ```bash
-./scripts/install_lamp.sh -d auth.example.com -e admin@example.com -y
+./scripts/install_lamp.sh -r <role> -d <domain>
 ```
+
+**Examples:**
+```bash
+# Standard Install
+./scripts/install_lamp.sh -r validator -d auth.example.com
+
+# Enterprise Install (PostgreSQL)
+./scripts/install_lamp.sh -r enterprise -d auth.corp.com -b
+
+# User Client Only
+./scripts/install_lamp.sh -r user
+```
+
 **Flags:**
+- `-r`: Role (`validator`, `enterprise`, `user`).
 - `-d`: Domain Name.
-- `-e`: Email for SSL (Let's Encrypt).
-- `-y`: Non-interactive mode (Yes to all).
-- `-u`: Skip UFW firewall configuration.
-- `-s`: Skip SSL configuration.
+- `-e`: Email for SSL.
+- `-b`: Enable Daily Automated Backups.
+- `-y`: Non-interactive mode.
+- `-u`: Skip Firewall.
+- `--uninstall`: Remove the application.
 
 ### A. Linux LAMP Server (Apache + Gunicorn)
 Standard deployment for a single Linux server (Ubuntu/Debian/CentOS).
