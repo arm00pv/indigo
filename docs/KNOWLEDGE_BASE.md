@@ -51,6 +51,39 @@ This guide helps end-users, administrators, and developers troubleshoot common i
 
 ---
 
+## 🛑 Error Handling & Rate Limiting
+
+### 🔴 "Locked. Retry in X seconds."
+**Symptoms:** The client app refuses to authenticate and displays a countdown timer.
+**Cause:** You have triggered the **Rate Limiter** by entering an incorrect PIN or OTP 5 times in a row.
+**Mechanism:**
+- The server returns HTTP `403 Forbidden` with a `Retry-After` header (seconds).
+- The client respects this header and blocks further attempts until the timer expires.
+**Solution:**
+- Wait for the timer to reach zero.
+- Ensure you are using the correct PIN.
+- If you fail 5 more times (Total 10), the device will be **Soft Locked** and require Admin intervention.
+
+---
+
+## 🛠️ Maintenance
+
+### Managing Audit Logs
+Over time, `audit_logs` can grow large, affecting dashboard performance.
+
+**Action:**
+Use the CLI command to prune old logs:
+```bash
+# Delete logs older than 30 days (Default)
+flask prune-logs
+
+# Custom retention (e.g., 90 days)
+flask prune-logs --days 90
+```
+This is safe to run on a live system.
+
+---
+
 ## 🖥️ Admin Dashboard
 
 ### 🔴 "Admin access denied" / Login Modal Loop

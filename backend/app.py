@@ -152,7 +152,7 @@ def hash_key(key):
 def get_tenant_from_key(key):
     """Resolves Tenant ID from API Key."""
     h = hash_key(key)
-    api_key = ApiKey.query.get(h)
+    api_key = db.session.get(ApiKey, h)
     if api_key:
         return api_key.tenant_id
     return None
@@ -290,7 +290,7 @@ def log_and_record(event_type, user_id, status, details=""):
             status=status,
             details=details,
             ip_address=ip_address,
-            timestamp=datetime.datetime.utcnow()
+            timestamp=datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
         )
         db.session.add(log_entry)
         db.session.commit()
@@ -354,7 +354,7 @@ def create_api_key():
         return jsonify({"error": "Missing tenant_id or key"}), 400
 
     h = hash_key(raw_key)
-    if ApiKey.query.get(h):
+    if db.session.get(ApiKey, h):
         return jsonify({"error": "Key already exists"}), 400
 
     db.session.add(ApiKey(key_hash=h, tenant_id=tenant_id))
@@ -429,7 +429,7 @@ def register():
         hashed_codes = [hash_key(c) for c in codes]
 
         # Save User (Composite PK)
-        user = User.query.get((user_id, g.tenant_id))
+        user = db.session.get(User, (user_id, g.tenant_id))
         if not user:
             user = User(
                 user_id=user_id,
@@ -471,33 +471,33 @@ def get_challenge():
         log_and_record("CHALLENGE", user_id, "BLOCK", reason)
         return jsonify({"error": reason}), 403
 
-    sec_record = UserSecurity.query.get((user_id, g.tenant_id))
+    sec_record = db.session.get(UserSecurity, (user_id, g.tenant_id))
     if sec_record:
         if sec_record.lock_type == 'PERMANENT':
             log_and_record("CHALLENGE", user_id, "BLOCK", "User Soft Locked (Abuse)")
             return jsonify({"error": "Device Soft Locked due to abuse. Contact Admin."}), 403
 
-        if sec_record.locked_until and datetime.datetime.now() < sec_record.locked_until:
+        if sec_record.locked_until and datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) < sec_record.locked_until:
             log_and_record("CHALLENGE", user_id, "BLOCK", "User Locked")
-            remaining = int((sec_record.locked_until - datetime.datetime.now()).total_seconds())
+            remaining = int((sec_record.locked_until - datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)).total_seconds())
             resp = jsonify({"error": f"Account temporarily locked. Try again in {remaining}s."})
             resp.status_code = 403
             resp.headers['Retry-After'] = remaining
             return resp
 
-    user = User.query.get((user_id, g.tenant_id))
+    user = db.session.get(User, (user_id, g.tenant_id))
     if not user:
         log_and_record("CHALLENGE", user_id, "FAIL", "User not found")
         return jsonify({"error": "User not found"}), 404
 
     otp = verifier.generate_otp()
 
-    challenge = ActiveChallenge.query.get((user_id, g.tenant_id))
+    challenge = db.session.get(ActiveChallenge, (user_id, g.tenant_id))
     if not challenge:
         challenge = ActiveChallenge(user_id=user_id, tenant_id=g.tenant_id)
         db.session.add(challenge)
     challenge.otp = otp
-    challenge.created_at = datetime.datetime.now()
+    challenge.created_at = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
     db.session.commit()
 
     encrypted_blob = verifier.encrypt_otp_for_user(user_id, otp, context=context)
@@ -526,7 +526,7 @@ def verify_otp():
         log_and_record("AUTH", user_id, "BLOCK", reason)
         return jsonify({"error": reason}), 403
 
-    sec_record = UserSecurity.query.get((user_id, g.tenant_id))
+    sec_record = db.session.get(UserSecurity, (user_id, g.tenant_id))
     failed_attempts = 0
 
     if sec_record:
@@ -536,7 +536,7 @@ def verify_otp():
             return jsonify({"error": "Device Soft Locked."}), 403
 
         if sec_record.locked_until:
-            if datetime.datetime.now() < sec_record.locked_until:
+            if datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) < sec_record.locked_until:
                 log_and_record("AUTH", user_id, "BLOCK", "User Locked")
                 return jsonify({"error": "Account temporarily locked."}), 403
             else:
@@ -546,7 +546,7 @@ def verify_otp():
         db.session.add(sec_record)
 
     # 1. Check Backup Codes First (if user exists)
-    user = User.query.get((user_id, g.tenant_id))
+    user = db.session.get(User, (user_id, g.tenant_id))
     used_backup = False
 
     if user and user.backup_codes:
@@ -567,12 +567,12 @@ def verify_otp():
             return jsonify({"status": "success", "message": "Authentication Successful (Backup Code)"}), 200
 
     # 2. Check Standard OTP
-    challenge = ActiveChallenge.query.get((user_id, g.tenant_id))
+    challenge = db.session.get(ActiveChallenge, (user_id, g.tenant_id))
     if not challenge:
         log_and_record("AUTH", user_id, "FAIL", "No active challenge")
         return jsonify({"error": "No active challenge found"}), 400
 
-    if datetime.datetime.now() - challenge.created_at > datetime.timedelta(minutes=5):
+    if datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) - challenge.created_at > datetime.timedelta(minutes=5):
         log_and_record("AUTH", user_id, "FAIL", "OTP Expired")
         return jsonify({"error": "OTP Expired."}), 400
 
@@ -593,7 +593,7 @@ def verify_otp():
         # Impossible Travel Check
         if sec_record.last_lat and sec_record.last_lon and lat and lon and sec_record.last_login_at:
             # Calculate time diff in hours
-            time_diff = (datetime.datetime.now() - sec_record.last_login_at).total_seconds() / 3600
+            time_diff = (datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) - sec_record.last_login_at).total_seconds() / 3600
             dist = calculate_distance(sec_record.last_lat, sec_record.last_lon, lat, lon)
 
             if dist > 100: # Ignore small jumps
@@ -606,7 +606,7 @@ def verify_otp():
 
         sec_record.last_ip = current_ip
         sec_record.last_user_agent = current_ua
-        sec_record.last_login_at = datetime.datetime.now()
+        sec_record.last_login_at = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
         sec_record.last_lat = lat
         sec_record.last_lon = lon
 
@@ -630,7 +630,7 @@ def verify_otp():
             msg = "Device Soft Locked due to abuse."
             code = 403
         elif failed_attempts >= 5:
-            sec_record.locked_until = datetime.datetime.now() + datetime.timedelta(minutes=15)
+            sec_record.locked_until = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) + datetime.timedelta(minutes=15)
             sec_record.lock_type = 'TEMP'
             log_and_record("AUTH", user_id, "BLOCK", "Temp Lock Activated")
             msg = "Too many failures. Locked for 15 mins."
@@ -653,7 +653,7 @@ def verify_otp():
 @app.route('/admin/user/<user_id>/lock', methods=['POST'])
 @require_admin
 def admin_lock_user(user_id):
-    sec = UserSecurity.query.get((user_id, g.tenant_id))
+    sec = db.session.get(UserSecurity, (user_id, g.tenant_id))
     if not sec:
         sec = UserSecurity(user_id=user_id, tenant_id=g.tenant_id)
         db.session.add(sec)
@@ -667,7 +667,7 @@ def admin_lock_user(user_id):
 @app.route('/admin/user/<user_id>/unlock', methods=['POST'])
 @require_admin
 def admin_unlock_user(user_id):
-    sec = UserSecurity.query.get((user_id, g.tenant_id))
+    sec = db.session.get(UserSecurity, (user_id, g.tenant_id))
     if sec:
         sec.lock_type = 'NONE'
         sec.failed_attempts = 0
@@ -693,7 +693,7 @@ def admin_users():
             fails = s.failed_attempts
             if s.lock_type == 'PERMANENT':
                 status = "Soft Locked"
-            elif s.locked_until and datetime.datetime.now() < s.locked_until:
+            elif s.locked_until and datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) < s.locked_until:
                 status = "Temp Locked"
 
         # Get count of codes
@@ -719,7 +719,7 @@ def admin_settings():
     if request.method == 'POST':
         data = request.json
         for key, val in data.items():
-            setting = SystemSetting.query.get((key, g.tenant_id))
+            setting = db.session.get(SystemSetting, (key, g.tenant_id))
             if not setting:
                 setting = SystemSetting(key=key, tenant_id=g.tenant_id)
                 db.session.add(setting)
@@ -794,7 +794,7 @@ def admin_export_logs():
 def admin_prune_logs():
     days = request.json.get('days', 30)
     try:
-        cutoff = datetime.datetime.utcnow() - datetime.timedelta(days=int(days))
+        cutoff = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) - datetime.timedelta(days=int(days))
         deleted = AuditLog.query.filter(
             AuditLog.tenant_id == g.tenant_id,
             AuditLog.timestamp < cutoff
@@ -880,7 +880,7 @@ def bulk_provision():
 
     for uid in user_ids:
         # Check if exists (Optional, not strictly required for provisioning payload)
-        user = User.query.get((uid, g.tenant_id))
+        user = db.session.get(User, (uid, g.tenant_id))
         status = "Existing" if user else "Ready to Enroll"
 
         config = {
@@ -972,13 +972,13 @@ def api_stats():
     soft_locked = UserSecurity.query.filter_by(tenant_id=tenant_id, lock_type='PERMANENT').all()
     soft_locked_list = [{"user_id": u.user_id, "fails": u.failed_attempts} for u in soft_locked]
 
-    biz_hours_setting = SystemSetting.query.get(('business_hours_enabled', tenant_id))
+    biz_hours_setting = db.session.get(SystemSetting, ('business_hours_enabled', tenant_id))
     biz_hours = (biz_hours_setting.value == 'true') if biz_hours_setting else False
     blacklist = IPBlacklist.query.filter_by(tenant_id=tenant_id).all()
     blacklist_data = [{"cidr": b.cidr, "reason": b.reason} for b in blacklist]
 
     # Advanced
-    one_day_ago = datetime.datetime.utcnow() - datetime.timedelta(hours=24)
+    one_day_ago = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) - datetime.timedelta(hours=24)
     recent_auths = AuditLog.query.filter(
         AuditLog.tenant_id == tenant_id,
         AuditLog.event_type == 'AUTH',

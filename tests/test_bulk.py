@@ -13,7 +13,7 @@ class TestBulk:
             with app.app_context():
                 db.engine.dispose()
                 db.create_all()
-                db.session.add(Tenant(id="default", name="Default"))
+                db.session.merge(Tenant(id="default", name="Default"))
                 h = hashlib.sha256("admin-key".encode()).hexdigest()
                 db.session.add(ApiKey(key_hash=h, tenant_id="default"))
                 db.session.commit()

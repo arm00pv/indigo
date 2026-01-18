@@ -46,8 +46,8 @@ class TestSecurityFeatures:
         # Manually backdate the challenge in DB to 6 minutes ago
         with app.app_context():
             # Composite key: (user_id, tenant_id)
-            challenge = ActiveChallenge.query.get((user_id, "default"))
-            challenge.created_at = datetime.datetime.now() - datetime.timedelta(minutes=6)
+            challenge = db.session.get(ActiveChallenge, (user_id, "default"))
+            challenge.created_at = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) - datetime.timedelta(minutes=6)
             db.session.commit()
             otp = challenge.otp
 

@@ -17,9 +17,7 @@ class ApiService {
         'push_endpoint': ''
       }),
     );
-    if (resp.statusCode != 200 && resp.statusCode != 201) {
-      throw Exception('Registration failed: ${resp.body}');
-    }
+    _checkResponse(resp, "Registration");
   }
 
   Future<String> getChallenge(String userId) async {
@@ -28,9 +26,8 @@ class ApiService {
       headers: {'Content-Type': 'application/json', 'X-Tenant-ID': tenantId},
       body: jsonEncode({'user_id': userId}),
     );
-    if (resp.statusCode != 200) {
-      throw Exception('Challenge failed: ${resp.body}');
-    }
+    _checkResponse(resp, "Challenge");
+
     final data = jsonDecode(resp.body);
     return data['encrypted_challenge_hex'];
   }
@@ -41,9 +38,29 @@ class ApiService {
       headers: {'Content-Type': 'application/json', 'X-Tenant-ID': tenantId},
       body: jsonEncode({'user_id': userId, 'otp': otp}),
     );
-    if (resp.statusCode != 200) {
-      throw Exception('Verification failed: ${resp.body}');
+    _checkResponse(resp, "Verification");
+  }
+
+  void _checkResponse(http.Response resp, String action) {
+    if (resp.statusCode >= 200 && resp.statusCode < 300) return;
+
+    if (resp.statusCode == 403) {
+      // Check for Retry-After
+      if (resp.headers.containsKey('retry-after')) {
+        final wait = resp.headers['retry-after'];
+        throw Exception('$action Locked: Please wait ${wait}s before retrying.');
+      }
     }
+
+    String errorMsg = resp.body;
+    try {
+      final json = jsonDecode(resp.body);
+      if (json is Map && (json.containsKey('error') || json.containsKey('message'))) {
+        errorMsg = json['error'] ?? json['message'];
+      }
+    } catch (_) {}
+
+    throw Exception('$action failed: $errorMsg');
   }
 
   String _strToHex(String input) {

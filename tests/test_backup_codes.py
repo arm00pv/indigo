@@ -25,7 +25,7 @@ class TestBackupCodes(unittest.TestCase):
 
             # Should be empty now
             t = Tenant(id="default", name="Default Org")
-            db.session.add(t)
+            db.session.merge(t)
 
             k = ApiKey(key_hash=hashlib.sha256("admin-key".encode()).hexdigest(), tenant_id="default")
             db.session.add(k)
