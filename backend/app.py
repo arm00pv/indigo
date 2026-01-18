@@ -479,7 +479,11 @@ def get_challenge():
 
         if sec_record.locked_until and datetime.datetime.now() < sec_record.locked_until:
             log_and_record("CHALLENGE", user_id, "BLOCK", "User Locked")
-            return jsonify({"error": "Account temporarily locked."}), 403
+            remaining = int((sec_record.locked_until - datetime.datetime.now()).total_seconds())
+            resp = jsonify({"error": f"Account temporarily locked. Try again in {remaining}s."})
+            resp.status_code = 403
+            resp.headers['Retry-After'] = remaining
+            return resp
 
     user = User.query.get((user_id, g.tenant_id))
     if not user:
@@ -630,7 +634,14 @@ def verify_otp():
             sec_record.lock_type = 'TEMP'
             log_and_record("AUTH", user_id, "BLOCK", "Temp Lock Activated")
             msg = "Too many failures. Locked for 15 mins."
-            code = 403
+
+            # Return Retry-After header
+            response = jsonify({"status": "failure", "message": msg})
+            response.status_code = 403
+            response.headers['Retry-After'] = 900 # 15 minutes in seconds
+
+            db.session.commit()
+            return response
         else:
             log_and_record("AUTH", user_id, "FAIL", f"Invalid OTP (Attempt {failed_attempts}/10)")
 
@@ -754,6 +765,8 @@ def admin_export_logs():
         query = query.filter(AuditLog.status.in_(['DURESS', 'ABUSE', 'BLOCK']))
     elif filter_type == 'errors':
         query = query.filter(AuditLog.status.in_(['FAIL', 'BLOCK', 'ABUSE', 'DURESS']))
+    elif filter_type == 'admin':
+        query = query.filter(AuditLog.event_type.in_(['ADMIN', 'MAINTENANCE', 'REVOKE', 'POLICY']))
 
     logs = query.order_by(AuditLog.id.desc()).all()
 

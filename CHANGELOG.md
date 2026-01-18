@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-01-17
+### Added
+- **Security & UX**:
+    - **Smart Rate Limiting**: Backend now returns standard `Retry-After` header on 403 Forbidden responses when users are temporarily locked.
+    - **Client Guidance**: Mobile Client parses `Retry-After` and displays a clear countdown message instead of a generic error.
+- **Admin Dashboard**:
+    - **Admin Activity View**: New modal and filter to view dedicated Administrative logs (e.g., Key Revocation, Policy Changes, Maintenance).
+- **Maintenance**:
+    - **CLI**: Added `flask prune-logs` command to clean up old audit logs (default > 30 days).
+
 ## [2.2.0] - 2026-01-17
 ### Added
 - **Notifications & Alerts**:

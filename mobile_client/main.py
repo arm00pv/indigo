@@ -191,7 +191,11 @@ def login_with_backup_code(auth):
         if verify_resp.status_code == 200:
             print_success("Authentication Successful! (Used Backup Code)")
         elif verify_resp.status_code == 403:
-            print_error(f"Security Alert: {verify_resp.json().get('message')}")
+            msg = verify_resp.json().get('message')
+            print_error(f"Security Alert: {msg}")
+            if 'Retry-After' in verify_resp.headers:
+                wait_time = verify_resp.headers['Retry-After']
+                print(f"{Colors.WARNING}⏳ Please wait {wait_time} seconds before retrying.{Colors.ENDC}")
         else:
             print_error(f"Authentication Failed: {verify_resp.json().get('message')}")
     except Exception as e:
@@ -245,6 +249,9 @@ def authenticate_flow(auth):
 
         if resp.status_code == 403:
             print_error(f"Access Denied: {resp.json().get('error')}")
+            if 'Retry-After' in resp.headers:
+                wait_time = resp.headers['Retry-After']
+                print(f"{Colors.WARNING}⏳ Please wait {wait_time} seconds before retrying.{Colors.ENDC}")
             return
 
         if resp.status_code != 200:
@@ -277,7 +284,11 @@ def authenticate_flow(auth):
             if verify_resp.status_code == 200:
                 print_success("Authentication Successful! Access Granted.")
             elif verify_resp.status_code == 403:
-                print_error(f"Security Alert: {verify_resp.json().get('message')}")
+                msg = verify_resp.json().get('message')
+                print_error(f"Security Alert: {msg}")
+                if 'Retry-After' in verify_resp.headers:
+                    wait_time = verify_resp.headers['Retry-After']
+                    print(f"{Colors.WARNING}⏳ Please wait {wait_time} seconds before retrying.{Colors.ENDC}")
             else:
                 print_error(f"Authentication Failed: {verify_resp.json().get('message')}")
 

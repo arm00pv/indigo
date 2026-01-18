@@ -206,4 +206,25 @@ The backend provides a REST API for management.
 | `POST` | `/admin/settings` | Update Global Settings | `{"business_hours_enabled": true}` |
 | `POST` | `/admin/policy/blacklist` | Block an IP/CIDR | `{"cidr": "1.2.3.4", "reason": "Spam"}` |
 | `DELETE` | `/admin/policy/blacklist` | Unblock an IP | `{"cidr": "1.2.3.4"}` |
-| `GET` | `/admin/export/logs` | Download Audit Logs | Params: `format=csv|json`, `filter=all|threats` |
+| `GET` | `/admin/export/logs` | Download Audit Logs | Params: `format=csv|json`, `filter=all|threats|admin` |
+| `POST` | `/admin/maintenance/prune` | Delete Old Logs | `{"days": 30}` |
+
+## 🛠️ 5. Maintenance & Operations
+
+### Managing Logs
+Over time, audit logs can grow significantly. Use the CLI or API to prune old records.
+
+**CLI Command:**
+```bash
+# Delete logs older than 30 days
+flask prune-logs
+
+# Delete logs older than 90 days
+flask prune-logs --days 90
+```
+
+**API:**
+POST `/admin/maintenance/prune` with body `{"days": 30}`.
+
+### Dashboard Admin View
+The Dashboard now includes a dedicated "Admin Activity" view (accessible via the user-shield icon in the Audit Logs card header). This view filters for administrative actions only (e.g., Policy Changes, User Unlocks), making it easier to audit your administrators.
