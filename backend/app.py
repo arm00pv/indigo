@@ -84,8 +84,8 @@ def get_ip_location(ip):
             if data.get('status') == 'success':
                 loc_str = f"{data.get('city')}, {data.get('country')}"
                 return loc_str, data.get('lat'), data.get('lon')
-    except:
-        pass
+    except Exception as e:
+        logger.warning(f"IP Location lookup failed for {ip}: {e}")
     return "Unknown", None, None
 
 def calculate_distance(lat1, lon1, lat2, lon2):

@@ -76,40 +76,32 @@ class CryptoUtils:
         nonce = os.urandom(12)
         ciphertext = aesgcm.encrypt(nonce, plaintext, None)
 
-        # 5. Serialize Ephemeral Public Key (uncompressed 65 bytes usually, or PEM)
-        # Using PEM to be safe and consistent with other methods, though less space efficient.
-        # Ideally we'd use X9.62 uncompressed point, but PEM is easier to parse with existing utils.
+        # 5. Serialize Ephemeral Public Key (uncompressed 65 bytes)
+        # We use X9.62 Uncompressed Point format for compact transmission and interoperability with Mobile Clients
         eph_pub_bytes = ephemeral_public_key.public_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo
-        )
-        # We need to know the length of the PEM to parse it back.
-        # For simplicity, we can prefix length. Or just use a fixed size format (DER).
-        # Let's use DER for the ephemeral key to make it easier to parse (TLV).
-        eph_pub_der = ephemeral_public_key.public_bytes(
-            encoding=serialization.Encoding.DER,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo
+            encoding=serialization.Encoding.X962,
+            format=serialization.PublicFormat.UncompressedPoint
         )
 
-        # Format: [4 bytes length of pubkey][pubkey][12 bytes nonce][ciphertext (includes tag)]
-        import struct
-        return struct.pack('>I', len(eph_pub_der)) + eph_pub_der + nonce + ciphertext
+        # Format: [65 bytes pubkey][12 bytes nonce][ciphertext (includes tag)]
+        return eph_pub_bytes + nonce + ciphertext
 
     @staticmethod
     def decrypt_data(private_key, data: bytes) -> bytes:
         """
         Decrypts data using ECIES.
         """
-        import struct
-
         try:
-            # 1. Parse structure
-            len_pub_key = struct.unpack('>I', data[:4])[0]
-            eph_pub_der = data[4 : 4 + len_pub_key]
-            nonce = data[4 + len_pub_key : 4 + len_pub_key + 12]
-            ciphertext = data[4 + len_pub_key + 12 :]
+            # 1. Parse structure (SECP256R1 uncompressed point is always 65 bytes)
+            KEY_SIZE = 65
+            eph_pub_bytes = data[:KEY_SIZE]
+            nonce = data[KEY_SIZE : KEY_SIZE + 12]
+            ciphertext = data[KEY_SIZE + 12 :]
 
-            ephemeral_public_key = serialization.load_der_public_key(eph_pub_der)
+            # Load the public key from the raw bytes (X9.62)
+            # cryptography library usually requires loading from DER/PEM or constructing numbers
+            # But EllipticCurvePublicKey.from_encoded_point works for X9.62
+            ephemeral_public_key = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256R1(), eph_pub_bytes)
 
             # 2. Perform ECDH
             shared_key = private_key.exchange(ec.ECDH(), ephemeral_public_key)
