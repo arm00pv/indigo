@@ -1107,9 +1107,9 @@ def api_stats():
         "policies": {
             "business_hours_enabled": biz_hours,
             "blacklist": blacklist_data,
-            "max_failures_soft": int(db.session.get(SystemSetting, ('policy_max_failures_soft_lock', tenant_id)).value) if db.session.get(SystemSetting, ('policy_max_failures_soft_lock', tenant_id)) else 10,
-            "max_failures_temp": int(db.session.get(SystemSetting, ('policy_max_failures_temp_lock', tenant_id)).value) if db.session.get(SystemSetting, ('policy_max_failures_temp_lock', tenant_id)) else 5,
-            "temp_lock_duration": int(db.session.get(SystemSetting, ('policy_temp_lock_duration_seconds', tenant_id)).value) if db.session.get(SystemSetting, ('policy_temp_lock_duration_seconds', tenant_id)) else 900
+            "policy_max_failures_soft_lock": int(db.session.get(SystemSetting, ('policy_max_failures_soft_lock', tenant_id)).value) if db.session.get(SystemSetting, ('policy_max_failures_soft_lock', tenant_id)) else 10,
+            "policy_max_failures_temp_lock": int(db.session.get(SystemSetting, ('policy_max_failures_temp_lock', tenant_id)).value) if db.session.get(SystemSetting, ('policy_max_failures_temp_lock', tenant_id)) else 5,
+            "policy_temp_lock_duration_seconds": int(db.session.get(SystemSetting, ('policy_temp_lock_duration_seconds', tenant_id)).value) if db.session.get(SystemSetting, ('policy_temp_lock_duration_seconds', tenant_id)) else 900
         }
     })
 

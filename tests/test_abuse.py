@@ -1,6 +1,8 @@
 import pytest
 import sqlite3
 import os
+import os
+os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 from backend.app import app, db, init_db_data
 from backend.models import UserSecurity
 

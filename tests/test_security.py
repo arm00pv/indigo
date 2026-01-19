@@ -3,6 +3,8 @@ import time
 import datetime
 import os
 from flask import json
+import os
+os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 from backend.app import app, db
 from backend.models import ActiveChallenge
 

@@ -1,6 +1,8 @@
 import pytest
 import datetime
 from unittest.mock import patch, MagicMock
+import os
+os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 from backend.app import app, db
 from backend.models import User, UserSecurity, AuditLog, Tenant, ApiKey, ActiveChallenge
 from mfa_sdk.verifier import VerificationStatus

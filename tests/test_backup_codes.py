@@ -6,6 +6,8 @@ import os
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+import os
+os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 from backend.app import app, db, User
 from mfa_sdk.crypto import CryptoUtils
 

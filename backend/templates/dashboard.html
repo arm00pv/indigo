@@ -101,6 +101,41 @@
   </div>
 </div>
 
+<!-- Settings Modal -->
+<div class="modal fade" id="settingsModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Security Policy Configuration</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="settings-form">
+            <div class="mb-3">
+                <label class="form-label">Max Failures (Soft Lock)</label>
+                <input type="number" class="form-control" id="conf-soft-lock" min="1">
+                <div class="form-text">Failures before permanent lock (requires admin unlock).</div>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Max Failures (Temp Lock)</label>
+                <input type="number" class="form-control" id="conf-temp-lock" min="1">
+                <div class="form-text">Failures before temporary lock.</div>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Temp Lock Duration (Seconds)</label>
+                <input type="number" class="form-control" id="conf-lock-duration" min="1">
+                <div class="form-text">How long the temporary lock lasts.</div>
+            </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="saveSettings()">Save Changes</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Enrollment Modal -->
 <div class="modal fade" id="enrollModal" tabindex="-1">
   <div class="modal-dialog">
@@ -306,9 +341,12 @@
                     <div class="card h-100">
                         <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
                             <span><i class="fas fa-gavel me-2"></i>Security Policies</span>
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="toggle-biz-hours" onchange="toggleBizHours(this)">
-                                <label class="form-check-label text-white" for="toggle-biz-hours">Business Hours</label>
+                            <div>
+                                <button class="btn btn-sm btn-outline-light me-2" onclick="openSettings()" title="Configure"><i class="fas fa-cog"></i></button>
+                                <div class="form-check form-switch d-inline-block">
+                                    <input class="form-check-input" type="checkbox" id="toggle-biz-hours" onchange="toggleBizHours(this)">
+                                    <label class="form-check-label text-white" for="toggle-biz-hours">Biz Hours</label>
+                                </div>
                             </div>
                         </div>
                         <div class="card-body">
@@ -919,6 +957,46 @@
             console.error(e);
             alert("Error fetching admin logs");
         }
+    }
+
+    function openSettings() {
+        if(!ADMIN_KEY) return;
+
+        fetch('/api/stats', {headers: {'X-Admin-Key': ADMIN_KEY}})
+        .then(res => res.json())
+        .then(data => {
+            if(data.policies) {
+                document.getElementById('conf-soft-lock').value = data.policies.policy_max_failures_soft_lock;
+                document.getElementById('conf-temp-lock').value = data.policies.policy_max_failures_temp_lock;
+                document.getElementById('conf-lock-duration').value = data.policies.policy_temp_lock_duration_seconds;
+                new bootstrap.Modal(document.getElementById('settingsModal')).show();
+            }
+        });
+    }
+
+    async function saveSettings() {
+        const soft = document.getElementById('conf-soft-lock').value;
+        const temp = document.getElementById('conf-temp-lock').value;
+        const dur = document.getElementById('conf-lock-duration').value;
+
+        try {
+            await fetch('/admin/settings', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'X-Admin-Key': ADMIN_KEY},
+                body: JSON.stringify({
+                    policy_max_failures_soft_lock: soft,
+                    policy_max_failures_temp_lock: temp,
+                    policy_temp_lock_duration_seconds: dur
+                })
+            });
+            // Hide modal
+            const el = document.getElementById('settingsModal');
+            const modal = bootstrap.Modal.getInstance(el);
+            modal.hide();
+
+            fetchData();
+            alert("Settings Saved");
+        } catch(e) { alert("Error saving settings"); }
     }
 </script>
 

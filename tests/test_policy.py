@@ -3,6 +3,8 @@ import sqlite3
 import os
 import json
 import datetime
+import os
+os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 from backend.app import app, db
 
 class TestPolicyEngine:

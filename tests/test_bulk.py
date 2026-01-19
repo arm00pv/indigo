@@ -1,5 +1,7 @@
 import pytest
 import json
+import os
+os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 from backend.app import app, db
 from backend.models import Tenant, ApiKey
 import hashlib

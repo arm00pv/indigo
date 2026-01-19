@@ -4,6 +4,8 @@ import glob
 import json
 import shutil
 import hashlib
+import os
+os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 from backend.app import app, db
 from backend.models import Tenant, User, ApiKey
 
