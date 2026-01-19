@@ -394,8 +394,15 @@
                     <div id="email-fields" style="display:none;" class="mb-3 border p-3 rounded bg-light">
                         <h6 class="text-muted small">SMTP Configuration</h6>
                         <div class="row g-2">
-                            <div class="col-md-8"><input type="text" id="smtp-host" class="form-control form-control-sm" placeholder="SMTP Host (e.g. smtp.gmail.com)"></div>
-                            <div class="col-md-4"><input type="number" id="smtp-port" class="form-control form-control-sm" placeholder="Port (587)"></div>
+                            <div class="col-md-6"><input type="text" id="smtp-host" class="form-control form-control-sm" placeholder="SMTP Host"></div>
+                            <div class="col-md-3"><input type="number" id="smtp-port" class="form-control form-control-sm" placeholder="Port"></div>
+                            <div class="col-md-3">
+                                <select id="smtp-enc" class="form-select form-select-sm">
+                                    <option value="STARTTLS">STARTTLS</option>
+                                    <option value="SSL">SSL/TLS</option>
+                                    <option value="NONE">None</option>
+                                </select>
+                            </div>
                             <div class="col-md-6"><input type="text" id="smtp-user" class="form-control form-control-sm" placeholder="Username/Email"></div>
                             <div class="col-md-6"><input type="password" id="smtp-pass" class="form-control form-control-sm" placeholder="Password"></div>
                         </div>
@@ -921,12 +928,13 @@
         if(type === 'EMAIL') {
             const host = document.getElementById('smtp-host').value;
             const port = document.getElementById('smtp-port').value;
+            const enc = document.getElementById('smtp-enc').value;
             const user = document.getElementById('smtp-user').value;
             const pass = document.getElementById('smtp-pass').value;
 
             if(!host || !port) return alert("Missing SMTP Host/Port");
 
-            config = {email: target, host: host, port: port, user: user, pass: pass};
+            config = {email: target, host: host, port: port, encryption: enc, user: user, pass: pass};
         }
 
         try {

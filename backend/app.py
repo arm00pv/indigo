@@ -255,9 +255,15 @@ def dispatch_alerts(event_type, user_id, status, details):
                     msg['From'] = config.get('sender', 'alert@indigo.local')
                     msg['To'] = config['email']
 
-                    s = smtplib.SMTP(config['host'], int(config.get('port', 25)))
+                    enc = config.get('encryption', 'STARTTLS')
+                    if enc == 'SSL':
+                        s = smtplib.SMTP_SSL(config['host'], int(config.get('port', 465)))
+                    else:
+                        s = smtplib.SMTP(config['host'], int(config.get('port', 25)))
+                        if enc == 'STARTTLS':
+                            s.starttls()
+
                     if config.get('user') and config.get('pass'):
-                        s.starttls()
                         s.login(config['user'], config['pass'])
                     s.send_message(msg)
                     s.quit()
