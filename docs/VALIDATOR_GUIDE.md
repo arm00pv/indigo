@@ -29,3 +29,9 @@ flask backup
 
 ### Restore
 Currently, restoration is manual. Use the JSON files in `backups/` to repopulate the database or reference during disaster recovery.
+
+### Health Check
+Run the doctor command to verify database connectivity and permissions:
+```bash
+flask doctor
+```

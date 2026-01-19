@@ -817,6 +817,44 @@ def model_to_dict(obj):
         d[c.name] = val
     return d
 
+@app.cli.command("doctor")
+def doctor_command():
+    """Checks system health and configuration."""
+    print("=== Indigo MFA Doctor ===")
+
+    # 1. DB Connection
+    try:
+        db.session.execute(db.text("SELECT 1"))
+        print("[PASS] Database Connection")
+    except Exception as e:
+        print(f"[FAIL] Database Connection: {e}")
+
+    # 2. Key Check
+    try:
+        keys = db.session.query(ApiKey).count()
+        if keys > 0:
+            print(f"[PASS] {keys} Admin Keys found.")
+        else:
+            print("[FAIL] No Admin Keys found! Run 'flask add-admin'.")
+    except Exception as e:
+        print(f"[FAIL] Key Check Error: {e}")
+
+    # 3. Permissions
+    for d in ["logs", "backups"]:
+        path = os.path.join(os.getcwd(), d)
+        if not os.path.exists(path):
+            try:
+                os.makedirs(path)
+                print(f"[PASS] Created directory {d}")
+            except:
+                print(f"[FAIL] Could not create {d}")
+        elif os.access(path, os.W_OK):
+            print(f"[PASS] Write access to {d}")
+        else:
+            print(f"[FAIL] No write access to {d}")
+
+    print("=== Done ===")
+
 @app.cli.command("backup")
 def backup_command():
     """Backs up the entire database to a JSON file."""
@@ -839,6 +877,63 @@ def backup_command():
     with open(path, 'w') as f:
         json.dump(data, f, default=str, indent=2)
     print(f"Backup saved to {path}")
+
+@app.cli.command("restore")
+@click.argument("filename")
+def restore_command(filename):
+    """Restores the database from a JSON backup file."""
+    if not os.path.exists(filename):
+        print(f"Error: File {filename} not found.")
+        return
+
+    with open(filename, 'r') as f:
+        data = json.load(f)
+
+    print(f"Restoring from {filename}...")
+
+    # Order matters due to Foreign Keys
+    models_map = [
+        ('tenants', Tenant),
+        ('api_keys', ApiKey),
+        ('users', User),
+        ('user_security', UserSecurity),
+        ('system_settings', SystemSetting),
+        ('ip_blacklist', IPBlacklist),
+        ('notification_channels', NotificationChannel),
+        ('audit_logs', AuditLog)
+    ]
+
+    try:
+        for key, model in models_map:
+            items = data.get(key, [])
+            print(f"Restoring {len(items)} {key}...")
+            for item in items:
+                # Convert dict to model
+                row_data = {}
+                for c in model.__table__.columns:
+                    if c.name in item:
+                        val = item[c.name]
+                        # Helper inline
+                        if isinstance(c.type, db.LargeBinary) and isinstance(val, str):
+                            try:
+                                val = base64.b64decode(val)
+                            except:
+                                pass
+
+                        if isinstance(c.type, db.DateTime) and isinstance(val, str):
+                            try:
+                                val = datetime.datetime.fromisoformat(val)
+                            except:
+                                pass
+
+                        row_data[c.name] = val
+
+                db.session.merge(model(**row_data))
+            db.session.commit()
+        print("Restore complete.")
+    except Exception as e:
+        db.session.rollback()
+        print(f"Restore failed: {e}")
 
 @app.cli.command("add-admin")
 @click.option("--key", prompt=True, hide_input=True, confirmation_prompt=True, help="The Admin API Key.")
