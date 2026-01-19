@@ -44,11 +44,19 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
 
 # --- Logging Setup ---
+if not os.path.exists("logs"):
+    try:
+        os.makedirs("logs")
+    except:
+        pass
+
+from logging.handlers import RotatingFileHandler
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler("app.log"),
+        RotatingFileHandler("logs/app.log", maxBytes=10*1024*1024, backupCount=5),
         logging.StreamHandler(sys.stdout)
     ]
 )

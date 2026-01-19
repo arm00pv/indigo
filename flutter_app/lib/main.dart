@@ -89,7 +89,11 @@ class _HomePageState extends State<HomePage> {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Setup Successful")));
 
     } catch (e) {
-        setState(() { _status = "Error: $e"; });
+        final msg = e.toString().replaceAll("Exception: ", "");
+        setState(() { _status = "Error: $msg"; });
+        if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red));
+        }
     }
   }
 
@@ -150,7 +154,11 @@ class _HomePageState extends State<HomePage> {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Authentication Successful")));
 
     } catch (e) {
-        setState(() { _status = "Auth Error: $e"; });
+        final msg = e.toString().replaceAll("Exception: ", "");
+        setState(() { _status = "Auth Error: $msg"; });
+        if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red));
+        }
     }
   }
 
