@@ -799,6 +799,59 @@ def admin_export_logs():
             headers={"Content-disposition": f"attachment; filename=indigo_logs_{filter_type}.csv"}
         )
 
+def model_to_dict(obj):
+    d = {}
+    for c in obj.__table__.columns:
+        val = getattr(obj, c.name)
+        if isinstance(val, bytes):
+            val = base64.b64encode(val).decode('utf-8')
+        d[c.name] = val
+    return d
+
+@app.cli.command("backup")
+def backup_command():
+    """Backs up the entire database to a JSON file."""
+    backup_dir = os.path.join(os.getcwd(), "backups")
+    os.makedirs(backup_dir, exist_ok=True)
+    ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
+
+    data = {
+        "tenants": [model_to_dict(x) for x in Tenant.query.all()],
+        "api_keys": [model_to_dict(x) for x in ApiKey.query.all()],
+        "users": [model_to_dict(x) for x in User.query.all()],
+        "user_security": [model_to_dict(x) for x in UserSecurity.query.all()],
+        "system_settings": [model_to_dict(x) for x in SystemSetting.query.all()],
+        "ip_blacklist": [model_to_dict(x) for x in IPBlacklist.query.all()],
+        "notification_channels": [model_to_dict(x) for x in NotificationChannel.query.all()],
+        "audit_logs": [model_to_dict(x) for x in AuditLog.query.all()],
+    }
+
+    path = os.path.join(backup_dir, f"indigo_full_backup_{ts}.json")
+    with open(path, 'w') as f:
+        json.dump(data, f, default=str, indent=2)
+    print(f"Backup saved to {path}")
+
+@app.route('/admin/maintenance/backup', methods=['GET'])
+@require_admin
+def admin_backup_tenant():
+    data = {
+        "tenant_id": g.tenant_id,
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "users": [model_to_dict(x) for x in User.query.filter_by(tenant_id=g.tenant_id).all()],
+        "user_security": [model_to_dict(x) for x in UserSecurity.query.filter_by(tenant_id=g.tenant_id).all()],
+        "system_settings": [model_to_dict(x) for x in SystemSetting.query.filter_by(tenant_id=g.tenant_id).all()],
+        "ip_blacklist": [model_to_dict(x) for x in IPBlacklist.query.filter_by(tenant_id=g.tenant_id).all()],
+        "notification_channels": [model_to_dict(x) for x in NotificationChannel.query.filter_by(tenant_id=g.tenant_id).all()],
+        "audit_logs": [model_to_dict(x) for x in AuditLog.query.filter_by(tenant_id=g.tenant_id).all()],
+    }
+    return jsonify(data)
+
+@app.route('/admin/maintenance/restore', methods=['POST'])
+@require_admin
+def admin_restore_tenant():
+    # Placeholder for restore logic
+    return jsonify({"message": "Restore functionality implemented via CLI import only currently."}), 501
+
 @app.route('/admin/maintenance/prune', methods=['POST'])
 @require_admin
 def admin_prune_logs():
