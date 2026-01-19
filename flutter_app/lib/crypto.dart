@@ -80,4 +80,16 @@ class IndigoCrypto {
     final b64 = base64.encode(allBytes);
     return "-----BEGIN PUBLIC KEY-----\n$b64\n-----END PUBLIC KEY-----";
   }
+
+  // Persist Key
+  static Future<String> encodePrivateKey(SimpleKeyPair keyPair) async {
+    final bytes = await keyPair.extractPrivateKeyBytes();
+    return base64.encode(bytes);
+  }
+
+  // Load Key
+  static Future<SimpleKeyPair> decodePrivateKey(String b64) async {
+    final bytes = base64.decode(b64);
+    return await ecdh.newKeyPairFromSeed(bytes);
+  }
 }

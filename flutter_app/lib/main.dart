@@ -53,13 +53,14 @@ class _HomePageState extends State<HomePage> {
     baseUrl = await storage.read(key: 'base_url');
     tenantId = await storage.read(key: 'tenant_id') ?? "default";
 
-    // Check for keys (Simulation)
+    // Check for keys
     if (userId != null && baseUrl != null) {
-        setState(() { _status = "Ready for: $userId"; });
-        // Restore keys logic would go here
-        // For demo, we regenerate if missing, which requires re-register
-        if (_keyPair == null) {
-             _keyPair = await IndigoCrypto.generateKeys();
+        final keyStr = await storage.read(key: 'private_key');
+        if (keyStr != null) {
+             _keyPair = await IndigoCrypto.decodePrivateKey(keyStr);
+             setState(() { _status = "Ready for: $userId"; });
+        } else {
+             setState(() { _status = "Keys missing. Please Setup again."; });
         }
     }
   }
@@ -79,6 +80,10 @@ class _HomePageState extends State<HomePage> {
         // Generate Keys
         _keyPair = await IndigoCrypto.generateKeys();
         final pubPem = await IndigoCrypto.getPublicKeyPem(_keyPair!);
+
+        // Save Keys
+        final keyStr = await IndigoCrypto.encodePrivateKey(_keyPair!);
+        await storage.write(key: 'private_key', value: keyStr);
 
         // Register
         final api = ApiService(data['url'], data['tenant_id']);
