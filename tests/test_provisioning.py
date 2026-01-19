@@ -17,7 +17,7 @@ class TestProvisioning:
                 # Setup
                 db.session.merge(Tenant(id="default", name="Default"))
                 h = hashlib.sha256("admin-key".encode()).hexdigest()
-                db.session.add(ApiKey(key_hash=h, tenant_id="default"))
+                db.session.merge(ApiKey(key_hash=h, tenant_id="default"))
                 db.session.commit()
             yield client
             with app.app_context():

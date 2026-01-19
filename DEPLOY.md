@@ -228,3 +228,15 @@ POST `/admin/maintenance/prune` with body `{"days": 30}`.
 
 ### Dashboard Admin View
 The Dashboard now includes a dedicated "Admin Activity" view (accessible via the user-shield icon in the Audit Logs card header). This view filters for administrative actions only (e.g., Policy Changes, User Unlocks), making it easier to audit your administrators.
+
+### Managing Admin Keys
+If you lose your Admin API Key, you can add a new one via the CLI.
+
+**CLI Command:**
+```bash
+# Interactive
+flask add-admin
+
+# Non-interactive
+flask add-admin --key "new-secret-key" --tenant "default"
+```

@@ -15,6 +15,7 @@ import base64
 import io
 import math
 import qrcode
+import click
 from flask import Flask, request, jsonify, render_template, Response, g, send_file
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 from reportlab.pdfgen import canvas
@@ -830,6 +831,27 @@ def backup_command():
     with open(path, 'w') as f:
         json.dump(data, f, default=str, indent=2)
     print(f"Backup saved to {path}")
+
+@app.cli.command("add-admin")
+@click.option("--key", prompt=True, hide_input=True, confirmation_prompt=True, help="The Admin API Key.")
+@click.option("--tenant", default="default", help="The Tenant ID (default: default).")
+def add_admin_command(key, tenant):
+    """Adds a new Admin API Key."""
+    h = hash_key(key)
+
+    # Check if tenant exists
+    t = db.session.get(Tenant, tenant)
+    if not t:
+        print(f"Error: Tenant '{tenant}' does not exist.")
+        return
+
+    if db.session.get(ApiKey, h):
+        print("Error: Key already exists.")
+        return
+
+    db.session.add(ApiKey(key_hash=h, tenant_id=tenant))
+    db.session.commit()
+    print(f"Admin Key added for tenant '{tenant}'.")
 
 @app.route('/admin/maintenance/backup', methods=['GET'])
 @require_admin

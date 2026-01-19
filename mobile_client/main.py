@@ -28,9 +28,19 @@ class Colors:
 # Configuration
 API_URLS = ["http://127.0.0.1:5000"] # Primary + Failovers
 TENANT_ID = "default"
-CONFIG_FILE = "client_config.json"
-KEY_FILE = "device_key.pem"
-PIN_FILE = "device_pin.txt"
+
+# Use Home Directory for storage
+HOME_DIR = os.path.join(os.path.expanduser("~"), ".indigo-mfa")
+if not os.path.exists(HOME_DIR):
+    try:
+        os.makedirs(HOME_DIR)
+    except:
+        pass # Fallback if permissions issue? Or just fail.
+
+CONFIG_FILE = os.path.join(HOME_DIR, "client_config.json")
+KEY_FILE = os.path.join(HOME_DIR, "device_key.pem")
+PIN_FILE = os.path.join(HOME_DIR, "device_pin.txt")
+DURESS_FILE = os.path.join(HOME_DIR, "device_duress.txt")
 PUSH_PORT = 8089
 
 def print_header(text):
@@ -113,8 +123,8 @@ def get_authenticator(user_id):
         except Exception:
             print_error("Key file corrupted or incompatible.")
 
-        if os.path.exists("device_duress.txt"):
-             with open("device_duress.txt", "r") as f:
+        if os.path.exists(DURESS_FILE):
+             with open(DURESS_FILE, "r") as f:
                 auth._duress_pin = f.read().strip()
 
     else:
@@ -139,7 +149,7 @@ def get_authenticator(user_id):
             f.write(pin)
 
         if duress_pin:
-             with open("device_duress.txt", "w") as f:
+             with open(DURESS_FILE, "w") as f:
                   f.write(duress_pin)
 
     return auth

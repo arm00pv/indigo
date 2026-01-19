@@ -20,7 +20,7 @@ class TestPolicyEngine:
                 import hashlib
                 db.session.merge(Tenant(id="default", name="Default Org"))
                 h = hashlib.sha256("test-key".encode()).hexdigest()
-                db.session.add(ApiKey(key_hash=h, tenant_id="default"))
+                db.session.merge(ApiKey(key_hash=h, tenant_id="default"))
                 db.session.commit()
             yield client
             with app.app_context():
