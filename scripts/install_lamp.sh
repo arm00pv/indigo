@@ -254,9 +254,11 @@ if [ "$SKIP_SSL" = false ] && [ "$DOMAIN" != "localhost" ]; then
 fi
 
 if [ "$BACKUP_CRON" = true ]; then
-    echo "Setting up Daily Backup Cron..."
-    # Run at 2 AM
+    echo "Setting up Maintenance Crons..."
+    # Run at 2 AM: Backup
     (crontab -l 2>/dev/null; echo "0 2 * * * cd $APP_DIR && ./venv/bin/flask backup >> /var/log/indigo_backup.log 2>&1") | crontab -
+    # Run at 3 AM: Prune Logs
+    (crontab -l 2>/dev/null; echo "0 3 * * * cd $APP_DIR && ./venv/bin/flask prune-logs >> /var/log/indigo_prune.log 2>&1") | crontab -
 fi
 
 echo "=== Installation Complete ($ROLE) ==="

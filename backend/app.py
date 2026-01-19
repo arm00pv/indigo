@@ -956,6 +956,18 @@ def add_admin_command(key, tenant):
     db.session.commit()
     print(f"Admin Key added for tenant '{tenant}'.")
 
+@app.cli.command("prune-logs")
+@click.option("--days", default=30, help="Retention days.")
+def prune_logs_command(days):
+    """Delete old audit logs."""
+    try:
+        cutoff = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) - datetime.timedelta(days=int(days))
+        deleted = AuditLog.query.filter(AuditLog.timestamp < cutoff).delete()
+        db.session.commit()
+        print(f"Pruned {deleted} logs older than {days} days.")
+    except Exception as e:
+        print(f"Error: {e}")
+
 @app.route('/admin/maintenance/backup', methods=['GET'])
 @require_admin
 def admin_backup_tenant():

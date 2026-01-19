@@ -37,6 +37,9 @@ services:
     depends_on:
       db_primary:
         condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+      - ./backups:/app/backups
     deploy:
       replicas: 3
     restart: always

@@ -7,6 +7,8 @@ services:
       - "5000:5000"
     volumes:
       - ./backend/mfa.db:/app/backend/mfa.db
+      - ./logs:/app/logs
+      - ./backups:/app/backups
     environment:
       - PYTHONUNBUFFERED=1
       # Set this to your Slack/Discord webhook URL to receive critical alerts (Duress/Abuse)
