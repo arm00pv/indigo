@@ -1,6 +1,7 @@
 from mfa_sdk.crypto import CryptoUtils
 from mfa_sdk.common import get_duress_otp
 import json
+import hashlib
 
 class Authenticator:
     def __init__(self, user_id):
@@ -8,12 +9,21 @@ class Authenticator:
         self._private_key = None
         self._pin = None
         self._duress_pin = None
+        self._pin_hash = None
+        self._duress_pin_hash = None
 
     def setup_account(self, pin, duress_pin=None):
         """Generates keys and sets a PIN. Simulates secure storage."""
         self._private_key = CryptoUtils.generate_key_pair()
         self._pin = pin
         self._duress_pin = duress_pin
+
+    def set_hashes(self, pin_hash, duress_pin_hash=None):
+        """Sets PIN hashes directly (Secure Mode). Clears plain PINs."""
+        self._pin_hash = pin_hash
+        self._duress_pin_hash = duress_pin_hash
+        self._pin = None
+        self._duress_pin = None
 
     def get_public_key_pem(self):
         """Returns the public key in PEM format for registration."""
@@ -35,12 +45,26 @@ class Authenticator:
             raise Exception("Account not setup")
 
         is_duress = False
-        if pin == self._pin:
-            is_duress = False
-        elif self._duress_pin and pin == self._duress_pin:
-            is_duress = True
+
+        # Check Secure Hash
+        if self._pin_hash:
+            h = hashlib.sha256(pin.encode('utf-8')).hexdigest()
+            if h == self._pin_hash:
+                is_duress = False
+            elif self._duress_pin_hash and h == self._duress_pin_hash:
+                is_duress = True
+            else:
+                raise Exception("Invalid PIN")
+        # Legacy Plain Check
+        elif self._pin is not None:
+            if pin == self._pin:
+                is_duress = False
+            elif self._duress_pin and pin == self._duress_pin:
+                is_duress = True
+            else:
+                raise Exception("Invalid PIN")
         else:
-            raise Exception("Invalid PIN")
+            raise Exception("PIN not configured")
 
         try:
             plaintext = CryptoUtils.decrypt_data(self._private_key, encrypted_otp_blob)

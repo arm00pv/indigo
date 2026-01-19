@@ -4,6 +4,7 @@ import requests
 import time
 import json
 import getpass
+import hashlib
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -28,6 +29,7 @@ class Colors:
 # Configuration
 API_URLS = ["http://127.0.0.1:5000"] # Primary + Failovers
 TENANT_ID = "default"
+SECURITY_CONFIG = {}
 
 # Use Home Directory for storage
 HOME_DIR = os.path.join(os.path.expanduser("~"), ".indigo-mfa")
@@ -69,21 +71,26 @@ def load_config():
                     API_URLS = [data['api_url']]
 
                 TENANT_ID = data.get('tenant_id', 'default')
+                SECURITY_CONFIG = data.get('security', {})
                 return data.get('user_id')
         except:
             print_error("Failed to load config.")
     return None
 
-def save_config(user_id, urls, tenant_id):
-    global API_URLS, TENANT_ID
+def save_config(user_id, urls, tenant_id, security=None):
+    global API_URLS, TENANT_ID, SECURITY_CONFIG
     API_URLS = urls
     TENANT_ID = tenant_id
+    if security:
+        SECURITY_CONFIG = security
+
     try:
         with open(CONFIG_FILE, 'w') as f:
             json.dump({
                 "user_id": user_id,
                 "api_urls": urls,
-                "tenant_id": tenant_id
+                "tenant_id": tenant_id,
+                "security": SECURITY_CONFIG
             }, f, indent=2)
         print_success("Configuration Saved.")
     except Exception as e:
@@ -110,22 +117,43 @@ def send_request(method, endpoint, json_data=None):
 def get_authenticator(user_id):
     auth = Authenticator(user_id)
 
-    if os.path.exists(KEY_FILE) and os.path.exists(PIN_FILE):
-        with open(KEY_FILE, "rb") as f:
-            priv_pem = f.read()
-        with open(PIN_FILE, "r") as f:
-            pin = f.read().strip()
-
+    if os.path.exists(KEY_FILE):
         from cryptography.hazmat.primitives import serialization
         try:
+            with open(KEY_FILE, "rb") as f:
+                priv_pem = f.read()
             auth._private_key = serialization.load_pem_private_key(priv_pem, password=None)
-            auth._pin = pin
         except Exception:
-            print_error("Key file corrupted or incompatible.")
+            print_error("Key file corrupted.")
+            return auth
 
-        if os.path.exists(DURESS_FILE):
-             with open(DURESS_FILE, "r") as f:
-                auth._duress_pin = f.read().strip()
+        # Check Security Config (Hashes) vs Legacy Files
+        if SECURITY_CONFIG:
+            auth.set_hashes(SECURITY_CONFIG.get('pin_hash'), SECURITY_CONFIG.get('duress_hash'))
+        elif os.path.exists(PIN_FILE):
+            print_info("Migrating legacy PINs to Secure Storage...")
+            with open(PIN_FILE, "r") as f:
+                pin = f.read().strip()
+
+            duress_pin = None
+            if os.path.exists(DURESS_FILE):
+                with open(DURESS_FILE, "r") as f:
+                    duress_pin = f.read().strip()
+
+            # Hash and Save
+            pin_hash = hashlib.sha256(pin.encode('utf-8')).hexdigest()
+            duress_hash = hashlib.sha256(duress_pin.encode('utf-8')).hexdigest() if duress_pin else None
+
+            security = {"pin_hash": pin_hash, "duress_hash": duress_hash}
+            save_config(user_id, API_URLS, TENANT_ID, security)
+            auth.set_hashes(pin_hash, duress_hash)
+
+            # Remove plain files
+            os.remove(PIN_FILE)
+            if os.path.exists(DURESS_FILE): os.remove(DURESS_FILE)
+            print_success("Migration Complete.")
+        else:
+            print_error("Configuration Error: Key exists but PIN missing.")
 
     else:
         from cryptography.hazmat.primitives import serialization
@@ -136,8 +164,14 @@ def get_authenticator(user_id):
         if not duress_pin:
              duress_pin = None
 
-        auth.setup_account(pin, duress_pin)
+        # Hash Immediately
+        pin_hash = hashlib.sha256(pin.encode('utf-8')).hexdigest()
+        duress_hash = hashlib.sha256(duress_pin.encode('utf-8')).hexdigest() if duress_pin else None
 
+        auth.setup_account(pin, duress_pin) # Creates key
+        auth.set_hashes(pin_hash, duress_hash) # Swaps to hash mode
+
+        # Save Key
         priv_pem = auth._private_key.private_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PrivateFormat.PKCS8,
@@ -145,12 +179,9 @@ def get_authenticator(user_id):
         )
         with open(KEY_FILE, "wb") as f:
             f.write(priv_pem)
-        with open(PIN_FILE, "w") as f:
-            f.write(pin)
 
-        if duress_pin:
-             with open(DURESS_FILE, "w") as f:
-                  f.write(duress_pin)
+        # Save Config
+        save_config(user_id, API_URLS, TENANT_ID, {"pin_hash": pin_hash, "duress_hash": duress_hash})
 
     return auth
 

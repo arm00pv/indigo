@@ -168,7 +168,7 @@
 
 <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4">
     <div class="container">
-        <a class="navbar-brand" href="#"><i class="fas fa-shield-alt me-2"></i>Indigo MFA Admin <span class="badge bg-light text-primary ms-2" style="font-size: 0.6em;" id="tenant-name"></span></a>
+        <a class="navbar-brand" href="#"><i class="fas fa-shield-alt me-2"></i>Indigo MFA Admin <span class="badge bg-light text-primary ms-2" style="font-size: 0.6em;" id="tenant-name"></span> <span class="badge bg-secondary ms-2" id="health-badge" style="font-size: 0.6em;">Checking Health...</span></a>
         <div class="d-flex align-items-center">
             <div class="dropdown me-3">
                 <button class="btn btn-light btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
@@ -890,7 +890,29 @@
     // Refresh every 3 seconds
     fetchData();
     fetchChannels();
+    checkHealth();
     setInterval(fetchData, 3000);
+    setInterval(checkHealth, 30000);
+
+    async function checkHealth() {
+        if(!ADMIN_KEY) return;
+        try {
+            const res = await fetch('/admin/system/health', {headers: {'X-Admin-Key': ADMIN_KEY}});
+            const data = await res.json();
+            const badge = document.getElementById('health-badge');
+            if(data.status === 'healthy') {
+                badge.className = 'badge bg-success ms-2';
+                badge.innerText = 'System Healthy';
+                badge.onclick = null;
+                badge.style.cursor = 'default';
+            } else {
+                badge.className = 'badge bg-danger ms-2';
+                badge.innerText = 'System Issues';
+                badge.onclick = () => alert(JSON.stringify(data.checks, null, 2));
+                badge.style.cursor = 'pointer';
+            }
+        } catch(e) {}
+    }
 
     async function fetchChannels() {
         if (!ADMIN_KEY) return;

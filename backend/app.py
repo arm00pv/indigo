@@ -974,6 +974,43 @@ def prune_logs_command(days):
     except Exception as e:
         print(f"Error: {e}")
 
+@app.route('/admin/system/health', methods=['GET'])
+@require_admin
+def admin_system_health():
+    """Returns system health status."""
+    status = "healthy"
+    checks = []
+
+    # DB
+    try:
+        db.session.execute(db.text("SELECT 1"))
+        checks.append({"name": "Database", "status": "pass"})
+    except Exception as e:
+        status = "unhealthy"
+        checks.append({"name": "Database", "status": "fail", "error": str(e)})
+
+    # Keys
+    try:
+        keys = db.session.query(ApiKey).count()
+        if keys > 0:
+            checks.append({"name": "Admin Keys", "status": "pass", "count": keys})
+        else:
+            status = "unhealthy"
+            checks.append({"name": "Admin Keys", "status": "fail", "error": "No keys found"})
+    except:
+        pass
+
+    # Permissions
+    for d in ["logs", "backups"]:
+        path = os.path.join(os.getcwd(), d)
+        if os.path.exists(path) and os.access(path, os.W_OK):
+            checks.append({"name": f"Permission: {d}", "status": "pass"})
+        else:
+            status = "unhealthy"
+            checks.append({"name": f"Permission: {d}", "status": "fail"})
+
+    return jsonify({"status": status, "checks": checks})
+
 @app.route('/admin/maintenance/backup', methods=['GET'])
 @require_admin
 def admin_backup_tenant():
