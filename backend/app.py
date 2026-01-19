@@ -624,26 +624,36 @@ def verify_otp():
         msg = "Invalid OTP"
         code = 401
 
-        if failed_attempts >= 10:
+        # Load Policy Settings
+        s_soft = db.session.get(SystemSetting, ('policy_max_failures_soft_lock', g.tenant_id))
+        limit_soft = int(s_soft.value) if s_soft else 10
+
+        s_temp = db.session.get(SystemSetting, ('policy_max_failures_temp_lock', g.tenant_id))
+        limit_temp = int(s_temp.value) if s_temp else 5
+
+        s_dur = db.session.get(SystemSetting, ('policy_temp_lock_duration_seconds', g.tenant_id))
+        duration = int(s_dur.value) if s_dur else 900
+
+        if failed_attempts >= limit_soft:
             sec_record.lock_type = 'PERMANENT'
             log_and_record("AUTH", user_id, "ABUSE", "Soft Lock Activated")
             msg = "Device Soft Locked due to abuse."
             code = 403
-        elif failed_attempts >= 5:
-            sec_record.locked_until = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) + datetime.timedelta(minutes=15)
+        elif failed_attempts >= limit_temp:
+            sec_record.locked_until = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) + datetime.timedelta(seconds=duration)
             sec_record.lock_type = 'TEMP'
             log_and_record("AUTH", user_id, "BLOCK", "Temp Lock Activated")
-            msg = "Too many failures. Locked for 15 mins."
+            msg = f"Too many failures. Locked for {duration}s."
 
             # Return Retry-After header
             response = jsonify({"status": "failure", "message": msg})
             response.status_code = 403
-            response.headers['Retry-After'] = 900 # 15 minutes in seconds
+            response.headers['Retry-After'] = duration
 
             db.session.commit()
             return response
         else:
-            log_and_record("AUTH", user_id, "FAIL", f"Invalid OTP (Attempt {failed_attempts}/10)")
+            log_and_record("AUTH", user_id, "FAIL", f"Invalid OTP (Attempt {failed_attempts}/{limit_soft})")
 
         db.session.commit()
         return jsonify({"status": "failure", "message": msg}), code
@@ -1013,7 +1023,10 @@ def api_stats():
         "failure_breakdown": failure_data,
         "policies": {
             "business_hours_enabled": biz_hours,
-            "blacklist": blacklist_data
+            "blacklist": blacklist_data,
+            "max_failures_soft": int(db.session.get(SystemSetting, ('policy_max_failures_soft_lock', tenant_id)).value) if db.session.get(SystemSetting, ('policy_max_failures_soft_lock', tenant_id)) else 10,
+            "max_failures_temp": int(db.session.get(SystemSetting, ('policy_max_failures_temp_lock', tenant_id)).value) if db.session.get(SystemSetting, ('policy_max_failures_temp_lock', tenant_id)) else 5,
+            "temp_lock_duration": int(db.session.get(SystemSetting, ('policy_temp_lock_duration_seconds', tenant_id)).value) if db.session.get(SystemSetting, ('policy_temp_lock_duration_seconds', tenant_id)) else 900
         }
     })
 

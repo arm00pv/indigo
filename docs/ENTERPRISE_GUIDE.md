@@ -19,3 +19,27 @@ This code contains:
 ## Cluster Management
 For high availability, deploy Indigo using the provided `docker-compose-cluster.yml`.
 Ensure load balancers pass through the `X-Tenant-ID` header if validators are distributed.
+
+## Security Policy Configuration
+Indigo MFA allows customization of lockout thresholds and durations per tenant. These can be configured via the `POST /admin/settings` endpoint.
+
+### Available Settings
+| Key | Default | Description |
+| :--- | :--- | :--- |
+| `policy_max_failures_soft_lock` | `10` | Number of failed attempts before a **Permanent Soft Lock** (requires Admin unlock). |
+| `policy_max_failures_temp_lock` | `5` | Number of failed attempts before a **Temporary Lock**. |
+| `policy_temp_lock_duration_seconds` | `900` | Duration (in seconds) of the Temporary Lock (default 15 minutes). |
+
+### Example: Stricter Policy
+To set a strict policy (3 attempts -> 1 hour lock, 5 attempts -> permanent):
+
+```bash
+curl -X POST https://auth.corp.com/admin/settings \
+  -H "X-Admin-Key: your-admin-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "policy_max_failures_soft_lock": "5",
+    "policy_max_failures_temp_lock": "3",
+    "policy_temp_lock_duration_seconds": "3600"
+  }'
+```
