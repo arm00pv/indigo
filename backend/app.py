@@ -118,7 +118,12 @@ def init_db_data():
                 db.session.add(ApiKey(key_hash=h, tenant_id="default"))
                 logger.info(f"Initialized Database with Provided Admin Key.")
         else:
-            logger.info("Initialized Database (No Admin Key provided - Setup Wizard mode enabled).")
+            # Final check: If NO keys exist, log it clearly
+            count = db.session.query(ApiKey).count()
+            if count == 0:
+                logger.warning("!!! SYSTEM UNINITIALIZED: No Admin Keys found. Access / to see Setup Wizard. !!!")
+            else:
+                logger.info(f"System Initialized ({count} keys found).")
 
         # Default Settings
         if not db.session.get(SystemSetting, ('business_hours_enabled', 'default')):

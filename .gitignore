@@ -1,7 +1,7 @@
+venv/
 __pycache__/
 *.pyc
 *.db
-*.pem
-device_pin.txt
-*.log
-device_duress.txt
+backend/mfa.db
+.env
+.DS_Store

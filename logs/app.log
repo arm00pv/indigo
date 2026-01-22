@@ -1,0 +1,102 @@
+2026-01-19 13:46:21,141 - INFO - Initialized Database with Admin Key hash: 62af8704...
+2026-01-19 13:46:21,154 - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.0.2:5000
+2026-01-19 13:46:21,154 - INFO - [33mPress CTRL+C to quit[0m
+2026-01-19 14:32:08,315 - INFO - Initialized Database with Admin Key hash: 62af8704...
+2026-01-19 14:32:08,325 - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.0.2:5000
+2026-01-19 14:32:08,325 - INFO - [33mPress CTRL+C to quit[0m
+2026-01-19 14:32:35,080 - INFO - 127.0.0.1 - - [19/Jan/2026 14:32:35] "GET /dashboard HTTP/1.1" 200 -
+2026-01-19 14:32:35,460 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-19 14:32:35,463 - INFO - 127.0.0.1 - - [19/Jan/2026 14:32:35] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
+2026-01-19 14:32:36,059 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-19 14:32:36,060 - INFO - 127.0.0.1 - - [19/Jan/2026 14:32:36] "[31m[1mGET /admin/settings HTTP/1.1[0m" 401 -
+2026-01-19 14:32:38,444 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-19 14:32:38,445 - INFO - 127.0.0.1 - - [19/Jan/2026 14:32:38] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
+2026-01-19 14:32:41,444 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-19 14:32:41,445 - INFO - 127.0.0.1 - - [19/Jan/2026 14:32:41] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
+2026-01-19 14:32:44,446 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-19 14:32:44,447 - INFO - 127.0.0.1 - - [19/Jan/2026 14:32:44] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
+2026-01-19 14:32:47,445 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-19 14:32:47,446 - INFO - 127.0.0.1 - - [19/Jan/2026 14:32:47] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
+2026-01-19 14:32:50,444 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-19 14:32:50,445 - INFO - 127.0.0.1 - - [19/Jan/2026 14:32:50] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
+2026-01-19 14:32:53,444 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-19 14:32:53,445 - INFO - 127.0.0.1 - - [19/Jan/2026 14:32:53] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
+2026-01-19 14:32:56,444 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-19 14:32:56,445 - INFO - 127.0.0.1 - - [19/Jan/2026 14:32:56] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
+2026-01-19 14:32:59,444 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-19 14:32:59,444 - INFO - 127.0.0.1 - - [19/Jan/2026 14:32:59] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
+2026-01-19 14:33:02,443 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-19 14:33:02,444 - INFO - 127.0.0.1 - - [19/Jan/2026 14:33:02] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
+2026-01-19 14:33:05,447 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-19 14:33:05,448 - INFO - 127.0.0.1 - - [19/Jan/2026 14:33:05] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
+2026-01-19 14:39:04,515 - INFO - 127.0.0.1 - - [19/Jan/2026 14:39:04] "GET /dashboard HTTP/1.1" 200 -
+2026-01-19 14:39:04,737 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-19 14:39:04,737 - INFO - 127.0.0.1 - - [19/Jan/2026 14:39:04] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
+2026-01-19 14:39:05,354 - INFO - 127.0.0.1 - - [19/Jan/2026 14:39:05] "GET /admin/settings HTTP/1.1" 200 -
+2026-01-19 14:39:05,365 - INFO - 127.0.0.1 - - [19/Jan/2026 14:39:05] "GET /dashboard HTTP/1.1" 200 -
+2026-01-19 14:39:05,428 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-19 14:39:05,429 - INFO - 127.0.0.1 - - [19/Jan/2026 14:39:05] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
+2026-01-19 14:39:05,445 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-19 14:39:05,446 - INFO - 127.0.0.1 - - [19/Jan/2026 14:39:05] "GET /admin/users HTTP/1.1" 200 -
+2026-01-19 14:39:05,447 - INFO - 127.0.0.1 - - [19/Jan/2026 14:39:05] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
+2026-01-19 14:39:05,457 - INFO - 127.0.0.1 - - [19/Jan/2026 14:39:05] "GET /admin/notifications HTTP/1.1" 200 -
+2026-01-19 14:39:05,687 - INFO - 127.0.0.1 - - [19/Jan/2026 14:39:05] "GET /api/stats HTTP/1.1" 200 -
+2026-01-19 14:39:06,305 - INFO - 127.0.0.1 - - [19/Jan/2026 14:39:06] "POST /admin/settings HTTP/1.1" 200 -
+2026-01-19 14:39:06,316 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-19 14:39:06,316 - INFO - 127.0.0.1 - - [19/Jan/2026 14:39:06] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
+2026-01-19 14:39:08,418 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-19 14:39:08,419 - INFO - 127.0.0.1 - - [19/Jan/2026 14:39:08] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
+2026-01-19 14:39:08,426 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-19 14:39:08,429 - INFO - 127.0.0.1 - - [19/Jan/2026 14:39:08] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
+2026-01-19 16:34:41,610 - INFO - Initialized Database with Admin Key hash: 62af8704...
+2026-01-19 16:37:11,285 - INFO - Initialized Database with Admin Key hash: 62af8704...
+2026-01-19 21:09:41,469 - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on http://127.0.0.1:5001
+2026-01-19 21:09:41,474 - INFO - [33mPress CTRL+C to quit[0m
+2026-01-19 21:10:05,233 - INFO - 127.0.0.1 - - [19/Jan/2026 21:10:05] "GET /dashboard HTTP/1.1" 200 -
+2026-01-19 21:10:05,713 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-19 21:10:05,714 - INFO - 127.0.0.1 - - [19/Jan/2026 21:10:05] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
+2026-01-19 21:10:08,687 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-19 21:10:08,688 - INFO - 127.0.0.1 - - [19/Jan/2026 21:10:08] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
+2026-01-19 21:10:11,687 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-19 21:10:11,687 - INFO - 127.0.0.1 - - [19/Jan/2026 21:10:11] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
+2026-01-19 21:10:14,687 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-19 21:10:14,687 - INFO - 127.0.0.1 - - [19/Jan/2026 21:10:14] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
+2026-01-19 21:10:17,686 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-19 21:10:17,687 - INFO - 127.0.0.1 - - [19/Jan/2026 21:10:17] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
+2026-01-19 21:10:20,687 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-19 21:10:20,687 - INFO - 127.0.0.1 - - [19/Jan/2026 21:10:20] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
+2026-01-19 21:10:23,687 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-19 21:10:23,688 - INFO - 127.0.0.1 - - [19/Jan/2026 21:10:23] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
+2026-01-19 21:10:26,686 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-19 21:10:26,687 - INFO - 127.0.0.1 - - [19/Jan/2026 21:10:26] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
+2026-01-19 21:10:29,686 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-19 21:10:29,688 - INFO - 127.0.0.1 - - [19/Jan/2026 21:10:29] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
+2026-01-19 21:10:32,686 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-19 21:10:32,687 - INFO - 127.0.0.1 - - [19/Jan/2026 21:10:32] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
+2026-01-19 21:10:35,687 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-19 21:10:35,687 - INFO - 127.0.0.1 - - [19/Jan/2026 21:10:35] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
+2026-01-19 21:12:15,721 - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on http://127.0.0.1:5002
+2026-01-19 21:12:15,722 - INFO - [33mPress CTRL+C to quit[0m
+2026-01-19 21:14:40,257 - INFO - Initialized Database with Admin Key hash: 62af8704...
+2026-01-19 21:16:47,431 - INFO - 127.0.0.1 - - [19/Jan/2026 21:16:47] "GET /dashboard HTTP/1.1" 200 -
+2026-01-19 21:16:47,646 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-19 21:16:47,647 - INFO - 127.0.0.1 - - [19/Jan/2026 21:16:47] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
+2026-01-19 21:16:48,264 - INFO - 127.0.0.1 - - [19/Jan/2026 21:16:48] "GET /admin/settings HTTP/1.1" 200 -
+2026-01-19 21:16:48,274 - INFO - 127.0.0.1 - - [19/Jan/2026 21:16:48] "GET /dashboard HTTP/1.1" 200 -
+2026-01-19 21:16:48,353 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-19 21:16:48,356 - INFO - 127.0.0.1 - - [19/Jan/2026 21:16:48] "GET /admin/users HTTP/1.1" 200 -
+2026-01-19 21:16:48,358 - INFO - 127.0.0.1 - - [19/Jan/2026 21:16:48] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
+2026-01-19 21:16:48,367 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-19 21:16:48,372 - INFO - 127.0.0.1 - - [19/Jan/2026 21:16:48] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
+2026-01-19 21:16:48,373 - INFO - 127.0.0.1 - - [19/Jan/2026 21:16:48] "GET /admin/system/health HTTP/1.1" 200 -
+2026-01-19 21:16:48,374 - INFO - 127.0.0.1 - - [19/Jan/2026 21:16:48] "GET /admin/notifications HTTP/1.1" 200 -
+2026-01-22 13:29:43,465 - INFO - Initialized Database with Admin Key hash: 62af8704...
+2026-01-22 15:30:09,360 - INFO - Initialized Database with Admin Key hash: 62af8704...
