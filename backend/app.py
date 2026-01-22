@@ -108,19 +108,26 @@ def init_db_data():
 
     db.create_all()
     # Ensure Default Tenant exists for backward compatibility or initial setup
-    if not Tenant.query.filter_by(name="Default Organization").first():
+    if not db.session.get(Tenant, "default"):
         default_tenant = Tenant(id="default", name="Default Organization")
         db.session.add(default_tenant)
+        # Flush to ensure Tenant exists before adding related records (fixes Postgres FK violation)
+        db.session.flush()
 
         # Create a default API Key for it (hashed)
         # Check env var for seed
         k = os.environ.get("ADMIN_API_KEY", "secret-admin-key")
         h = hashlib.sha256(k.encode()).hexdigest()
-        db.session.add(ApiKey(key_hash=h, tenant_id="default"))
+
+        if not db.session.get(ApiKey, h):
+            db.session.add(ApiKey(key_hash=h, tenant_id="default"))
 
         # Default Settings
-        db.session.add(SystemSetting(key='business_hours_enabled', value='false', tenant_id="default"))
-        db.session.add(SystemSetting(key='log_retention_days', value='90', tenant_id="default"))
+        if not db.session.get(SystemSetting, ('business_hours_enabled', 'default')):
+            db.session.add(SystemSetting(key='business_hours_enabled', value='false', tenant_id="default"))
+        if not db.session.get(SystemSetting, ('log_retention_days', 'default')):
+            db.session.add(SystemSetting(key='log_retention_days', value='90', tenant_id="default"))
+
         db.session.commit()
         logger.info(f"Initialized Database with Admin Key hash: {h[:8]}...")
 
