@@ -48,6 +48,29 @@
   </div>
 </div>
 
+<!-- Setup Modal (First Run) -->
+<div class="modal fade" id="setupModal" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-success text-white">
+        <h5 class="modal-title"><i class="fas fa-rocket me-2"></i>Welcome to Indigo MFA</h5>
+      </div>
+      <div class="modal-body">
+        <p>Your system is ready. Please create your <strong>Admin API Key</strong> to secure the dashboard.</p>
+        <div class="mb-3">
+            <label class="form-label">Create Admin Key</label>
+            <input type="password" id="setup-key-input" class="form-control" placeholder="e.g. super-secure-key-123">
+            <div class="form-text">Keep this safe! You will need it to login.</div>
+        </div>
+        <div class="text-danger small mt-2" id="setup-error" style="display:none;">Error creating key</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-success w-100" onclick="performSetup()">Initialize System</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Bulk Modal -->
 <div class="modal fade" id="bulkModal" tabindex="-1">
   <div class="modal-dialog modal-lg">
@@ -451,15 +474,62 @@
     let failureChartInstance = null;
     let ADMIN_KEY = localStorage.getItem("indigo_admin_key");
 
-    // Init: Check Login
-    if (!ADMIN_KEY) {
-        new bootstrap.Modal(document.getElementById('loginModal')).show();
-    } else {
-        document.getElementById('main-content').style.display = 'block';
-        fetchData();
-        fetchUsers();
-        setInterval(fetchData, 3000);
-        setInterval(fetchUsers, 10000);
+    // Init: Check Status then Login
+    checkSystemStatus();
+
+    async function checkSystemStatus() {
+        try {
+            const res = await fetch('/api/system/status');
+            const data = await res.json();
+
+            if (!data.initialized) {
+                // First Run
+                new bootstrap.Modal(document.getElementById('setupModal')).show();
+            } else if (!ADMIN_KEY) {
+                // Normal Login
+                new bootstrap.Modal(document.getElementById('loginModal')).show();
+            } else {
+                // Logged In
+                document.getElementById('main-content').style.display = 'block';
+                fetchData();
+                fetchUsers();
+                setInterval(fetchData, 3000);
+                setInterval(fetchUsers, 10000);
+            }
+        } catch(e) {
+            console.error("Status check failed", e);
+            // Fallback to login if API fails (maybe auth required?)
+            if (!ADMIN_KEY) new bootstrap.Modal(document.getElementById('loginModal')).show();
+        }
+    }
+
+    async function performSetup() {
+        const key = document.getElementById('setup-key-input').value;
+        if (!key || key.length < 8) {
+            alert("Key must be at least 8 characters.");
+            return;
+        }
+
+        try {
+            const res = await fetch('/api/setup', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({key: key})
+            });
+            const data = await res.json();
+
+            if (res.ok) {
+                localStorage.setItem("indigo_admin_key", key);
+                ADMIN_KEY = key;
+                alert("Setup Complete! Logging you in...");
+                location.reload();
+            } else {
+                document.getElementById('setup-error').innerText = data.error;
+                document.getElementById('setup-error').style.display = 'block';
+            }
+        } catch(e) {
+            alert("Setup Network Error");
+        }
     }
 
     async function login() {

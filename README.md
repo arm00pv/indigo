@@ -14,11 +14,16 @@
 ## 📦 Getting Started
 
 ### 1. Deployment
-Read the **[Deployment Guide](DEPLOY.md)** for detailed instructions on:
-*   **One-Click LAMP Install**: `scripts/install_lamp.sh` for Ubuntu/Debian.
-*   **Docker Compose**: Quick start with `docker-compose.yml`.
-*   **High Availability**: Enterprise cluster setup with `docker-compose-cluster.yml` (Postgres Primary/Replica).
-*   **Kubernetes**: Manifests in `k8s/`.
+Read the **[Deployment Guide](DEPLOY.md)** for detailed instructions.
+
+#### 🚀 First Run (Setup Wizard)
+When you first deploy the application (e.g., via DigitalOcean App Platform or Docker), the system starts in **Uninitialized Mode**.
+1.  Access your deployment URL (e.g., `https://your-app.com/`).
+2.  You will see a **Setup Wizard** instead of a Login screen.
+3.  Create your **Admin API Key** (minimum 8 characters).
+4.  The system will initialize and log you in automatically.
+
+*Note: If you provide an `ADMIN_API_KEY` environment variable during deployment, the Wizard is skipped.*
 
 ### 2. Client Development
 Read the **[Mobile Developer Guide](MOBILE_DEV_GUIDE.md)** to build the native Authenticator app for iOS (Swift) and Android (Kotlin) or use the Flutter Reference App.

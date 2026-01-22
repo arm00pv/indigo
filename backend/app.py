@@ -102,25 +102,23 @@ def calculate_distance(lat1, lon1, lat2, lon2):
 
 def init_db_data():
     """Initialize DB tables if not exist."""
-    # Ensure app context if not present (handled by caller usually, but safe to check)
-    # But db.create_all() needs it.
-    # The CLI command provides context.
 
     db.create_all()
-    # Ensure Default Tenant exists for backward compatibility or initial setup
+    # Ensure Default Tenant exists
     if not db.session.get(Tenant, "default"):
         default_tenant = Tenant(id="default", name="Default Organization")
         db.session.add(default_tenant)
-        # Flush to ensure Tenant exists before adding related records (fixes Postgres FK violation)
         db.session.flush()
 
-        # Create a default API Key for it (hashed)
-        # Check env var for seed
-        k = os.environ.get("ADMIN_API_KEY", "secret-admin-key")
-        h = hashlib.sha256(k.encode()).hexdigest()
-
-        if not db.session.get(ApiKey, h):
-            db.session.add(ApiKey(key_hash=h, tenant_id="default"))
+        # Check env var for seed (Optional: Only create if ENV is set)
+        k = os.environ.get("ADMIN_API_KEY")
+        if k:
+            h = hashlib.sha256(k.encode()).hexdigest()
+            if not db.session.get(ApiKey, h):
+                db.session.add(ApiKey(key_hash=h, tenant_id="default"))
+                logger.info(f"Initialized Database with Provided Admin Key.")
+        else:
+            logger.info("Initialized Database (No Admin Key provided - Setup Wizard mode enabled).")
 
         # Default Settings
         if not db.session.get(SystemSetting, ('business_hours_enabled', 'default')):
@@ -129,7 +127,6 @@ def init_db_data():
             db.session.add(SystemSetting(key='log_retention_days', value='90', tenant_id="default"))
 
         db.session.commit()
-        logger.info(f"Initialized Database with Admin Key hash: {h[:8]}...")
 
     # Check for missing columns (manual migration)
     try:
@@ -961,6 +958,38 @@ def prune_logs_command(days):
         print(f"Pruned {deleted} logs older than {days} days.")
     except Exception as e:
         print(f"Error: {e}")
+
+@app.route('/api/system/status', methods=['GET'])
+def system_status():
+    """Checks if the system is initialized (has admin keys)."""
+    try:
+        count = db.session.query(ApiKey).count()
+        return jsonify({"initialized": count > 0})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/setup', methods=['POST'])
+def setup_admin():
+    """Initial Setup Wizard: Create the first admin key."""
+    # Security Check: Only allow if NO keys exist
+    if db.session.query(ApiKey).count() > 0:
+        return jsonify({"error": "System already initialized."}), 403
+
+    raw_key = request.json.get('key')
+    if not raw_key or len(raw_key) < 8:
+        return jsonify({"error": "Invalid key provided (min 8 chars)."}), 400
+
+    # Create Key
+    h = hash_key(raw_key)
+    # Ensure tenant exists (it should from init-db)
+    if not db.session.get(Tenant, "default"):
+        db.session.add(Tenant(id="default", name="Default Organization"))
+
+    db.session.add(ApiKey(key_hash=h, tenant_id="default"))
+    db.session.commit()
+
+    log_and_record("ADMIN", "system", "SUCCESS", "System Initialized via Setup Wizard")
+    return jsonify({"message": "Setup Complete. You can now login."}), 201
 
 @app.route('/admin/system/health', methods=['GET'])
 @require_admin
