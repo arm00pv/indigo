@@ -25,6 +25,8 @@ When you first deploy the application (e.g., via DigitalOcean App Platform or Do
 
 *Note: If you provide an `ADMIN_API_KEY` environment variable during deployment, the Wizard is skipped.*
 
+**Lost your key?** Read **[Troubleshooting: Reset Database](docs/TROUBLESHOOTING.md)** to perform a hard reset via `RESET_DB=true`.
+
 ### 2. Client Development
 Read the **[Mobile Developer Guide](MOBILE_DEV_GUIDE.md)** to build the native Authenticator app for iOS (Swift) and Android (Kotlin) or use the Flutter Reference App.
 

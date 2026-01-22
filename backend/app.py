@@ -103,6 +103,12 @@ def calculate_distance(lat1, lon1, lat2, lon2):
 def init_db_data():
     """Initialize DB tables if not exist."""
 
+    # Check for Hard Reset Trigger (e.g. from App Platform Env Var)
+    if os.environ.get("RESET_DB", "").lower() == "true":
+        logger.warning("!!! RESET_DB DETECTED. DROPPING ALL TABLES !!!")
+        db.drop_all()
+        db.session.commit()
+
     db.create_all()
     # Ensure Default Tenant exists
     if not db.session.get(Tenant, "default"):
