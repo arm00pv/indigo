@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] - 2026-01-22
+### Added
+- **Security Hardening**:
+    - **Health API**: New `/admin/system/health` endpoint checks DB, Keys, and Permissions.
+    - **SMTP SSL**: Enhanced Email Notification channels to support SSL/TLS (Port 465).
+    - **Database Reset**: Added `RESET_DB=true` support to wipe the database via environment variable, allowing recovery from persistent state issues.
+- **Onboarding Experience**:
+    - **Setup Wizard**: New "Trust On First Use" (TOFU) flow. If no Admin Keys exist, the dashboard presents a Setup Wizard instead of a Login screen.
+    - **Role Selection**: Setup Wizard includes an "Installation Role" selector (Validator, Enterprise, User, Admin) to configure default security policies.
+    - **Auto-Discovery**: Backend `/api/system/status` endpoint to detect initialization state.
+- **Documentation**:
+    - Created `backend/API.md` referencing all endpoints.
+    - Added `docs/TROUBLESHOOTING.md` for database reset instructions.
+    - Updated `mobile_client/README.md` for the Python CLI.
+
+### Changed
+- **Crypto Interoperability**: Updated `mfa_sdk/crypto.py` to use standard **X9.62 Uncompressed Point** format (65 bytes) for Ephemeral Public Keys, ensuring compatibility with the Flutter Client.
+- **Deployment**:
+    - Updated `scripts/install_lamp.sh` to explicitly create and permission `logs/` and `backups/` directories.
+    - Updated `Dockerfile` and `app.py` logic to prevent pre-seeding the database with default keys, enabling the Setup Wizard on fresh installs.
+    - **Fix**: Added root route (`/`) to redirect to `/dashboard`, fixing 404 errors on some platforms.
+- **Refactor**: Consolidated notification logic into `backend/notifications.py` to reduce duplication.
+
+### Fixed
+- **Deployment**: Removed `backend/mfa.db` from the repository to prevent "Already Initialized" state on fresh deployments.
+- **Legacy Cleanup**: `init_db_data` now automatically detects and purges insecure legacy default keys (`secret-admin-key`) to unlock the Setup Wizard for existing deployments.
+
 ## [2.3.0] - 2026-01-17
 ### Added
 - **Security & UX**:
@@ -154,4 +181,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Uses ECDH + HKDF + AES-GCM for encrypted OTP delivery.
 - **Architecture**:
     - Split project into `backend` (Flask API) and `mobile_client` (Python CLI simulator).
-    - Replaced SMS/MMS with data-channel encryption.
+    - Replaced SMS/MMS with data-찼 channels.
