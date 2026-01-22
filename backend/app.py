@@ -987,6 +987,8 @@ def setup_admin():
         return jsonify({"error": "System already initialized."}), 403
 
     raw_key = request.json.get('key')
+    role = request.json.get('role', 'validator')
+
     if not raw_key or len(raw_key) < 8:
         return jsonify({"error": "Invalid key provided (min 8 chars)."}), 400
 
@@ -997,9 +999,25 @@ def setup_admin():
         db.session.add(Tenant(id="default", name="Default Organization"))
 
     db.session.add(ApiKey(key_hash=h, tenant_id="default"))
+
+    # Store Role
+    role_setting = db.session.get(SystemSetting, ('system_installation_role', 'default'))
+    if not role_setting:
+        role_setting = SystemSetting(key='system_installation_role', value=role, tenant_id='default')
+        db.session.add(role_setting)
+    else:
+        role_setting.value = role
+
+    # Configure Defaults based on Role
+    if role == 'enterprise':
+        # Stricter settings
+        s_soft = db.session.get(SystemSetting, ('policy_max_failures_soft_lock', 'default'))
+        if not s_soft: db.session.add(SystemSetting(key='policy_max_failures_soft_lock', value='5', tenant_id='default'))
+        else: s_soft.value = '5'
+
     db.session.commit()
 
-    log_and_record("ADMIN", "system", "SUCCESS", "System Initialized via Setup Wizard")
+    log_and_record("ADMIN", "system", "SUCCESS", f"System Initialized via Setup Wizard (Role: {role})")
     return jsonify({"message": "Setup Complete. You can now login."}), 201
 
 @app.route('/admin/system/health', methods=['GET'])

@@ -56,9 +56,19 @@
         <h5 class="modal-title"><i class="fas fa-rocket me-2"></i>Welcome to Indigo MFA</h5>
       </div>
       <div class="modal-body">
-        <p>Your system is ready. Please create your <strong>Admin API Key</strong> to secure the dashboard.</p>
+        <p>System Installation & Configuration.</p>
         <div class="mb-3">
-            <label class="form-label">Create Admin Key</label>
+            <label class="form-label">Installation Role</label>
+            <select class="form-select" id="setup-role">
+                <option value="validator">Validator Node (Standard)</option>
+                <option value="enterprise">Enterprise (High Performance)</option>
+                <option value="user">User / Personal</option>
+                <option value="admin">Administrator Manager</option>
+            </select>
+            <div class="form-text small">Select the primary purpose of this deployment.</div>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Create Admin API Key</label>
             <input type="password" id="setup-key-input" class="form-control" placeholder="e.g. super-secure-key-123">
             <div class="form-text">Keep this safe! You will need it to login.</div>
         </div>
@@ -505,6 +515,8 @@
 
     async function performSetup() {
         const key = document.getElementById('setup-key-input').value;
+        const role = document.getElementById('setup-role').value;
+
         if (!key || key.length < 8) {
             alert("Key must be at least 8 characters.");
             return;
@@ -514,7 +526,7 @@
             const res = await fetch('/api/setup', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({key: key})
+                body: JSON.stringify({key: key, role: role})
             });
             const data = await res.json();
 
