@@ -116,6 +116,12 @@ def init_db_data():
         db.session.add(default_tenant)
         db.session.flush()
 
+        # Default Settings
+        if not db.session.get(SystemSetting, ('business_hours_enabled', 'default')):
+            db.session.add(SystemSetting(key='business_hours_enabled', value='false', tenant_id="default"))
+        if not db.session.get(SystemSetting, ('log_retention_days', 'default')):
+            db.session.add(SystemSetting(key='log_retention_days', value='90', tenant_id="default"))
+
         # Check env var for seed (Optional: Only create if ENV is set)
         k = os.environ.get("ADMIN_API_KEY")
         if k:
@@ -123,21 +129,27 @@ def init_db_data():
             if not db.session.get(ApiKey, h):
                 db.session.add(ApiKey(key_hash=h, tenant_id="default"))
                 logger.info(f"Initialized Database with Provided Admin Key.")
-        else:
-            # Final check: If NO keys exist, log it clearly
-            count = db.session.query(ApiKey).count()
-            if count == 0:
-                logger.warning("!!! SYSTEM UNINITIALIZED: No Admin Keys found. Access / to see Setup Wizard. !!!")
-            else:
-                logger.info(f"System Initialized ({count} keys found).")
-
-        # Default Settings
-        if not db.session.get(SystemSetting, ('business_hours_enabled', 'default')):
-            db.session.add(SystemSetting(key='business_hours_enabled', value='false', tenant_id="default"))
-        if not db.session.get(SystemSetting, ('log_retention_days', 'default')):
-            db.session.add(SystemSetting(key='log_retention_days', value='90', tenant_id="default"))
 
         db.session.commit()
+
+    # Legacy Cleanup & Status Check (Run always)
+    try:
+        # Check for Insecure Default Key (from previous versions)
+        # Hash of 'secret-admin-key'
+        INSECURE_HASH = '3eb74d2109e2b5e9199149e3ed06e9b505a380d4c38d10118fb3027505751beb'
+        insecure_key = db.session.get(ApiKey, INSECURE_HASH)
+        if insecure_key:
+            db.session.delete(insecure_key)
+            db.session.commit()
+            logger.warning("!!! SECURITY: Purged insecure default Admin Key. System may now be uninitialized. !!!")
+
+        count = db.session.query(ApiKey).count()
+        if count == 0:
+            logger.warning("!!! SYSTEM UNINITIALIZED: No Admin Keys found. Access / to see Setup Wizard. !!!")
+        else:
+            logger.info(f"System Initialized ({count} keys found).")
+    except Exception as e:
+        logger.error(f"Error checking key status: {e}")
 
     # Check for missing columns (manual migration)
     try:

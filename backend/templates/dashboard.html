@@ -41,8 +41,33 @@
         <input type="password" id="api-key-input" class="form-control" placeholder="Enter API Key">
         <div class="text-danger small mt-2" id="login-error" style="display:none;">Invalid Key or Connection Error</div>
       </div>
-      <div class="modal-footer">
+      <div class="modal-footer d-flex justify-content-between">
+        <button class="btn btn-sm btn-link text-muted text-decoration-none" onclick="showResetHelp()">Trouble logging in?</button>
         <button type="button" class="btn btn-primary" onclick="login()">Access Dashboard</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Reset Help Modal -->
+<div class="modal fade" id="resetHelpModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-warning text-dark">
+        <h5 class="modal-title"><i class="fas fa-life-ring me-2"></i>Recovery Options</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p>If you have lost your Admin API Key, you cannot log in. To reset the system:</p>
+        <ol>
+            <li>Set the environment variable <code>RESET_DB=true</code> in your deployment configuration.</li>
+            <li>Redeploy the application.</li>
+            <li>The database will be wiped, and the Setup Wizard will appear.</li>
+            <li><strong>Remove</strong> the <code>RESET_DB</code> variable immediately after setup to prevent data loss.</li>
+        </ol>
+        <div class="alert alert-danger small">
+            <strong>Warning:</strong> This action deletes ALL user data and keys.
+        </div>
       </div>
     </div>
   </div>
@@ -1133,6 +1158,10 @@
             fetchData();
             alert("Settings Saved");
         } catch(e) { alert("Error saving settings"); }
+    }
+
+    function showResetHelp() {
+        new bootstrap.Modal(document.getElementById('resetHelpModal')).show();
     }
 </script>
 
