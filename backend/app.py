@@ -29,7 +29,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from mfa_sdk.verifier import Verifier, VerificationStatus
 from mfa_sdk.crypto import CryptoUtils
-from backend.notifications import send_webhook_alert
+from backend.notifications import send_alert, send_legacy_webhook
 
 app = Flask(__name__)
 
@@ -241,32 +241,11 @@ def dispatch_alerts(event_type, user_id, status, details):
                 if status not in events and event_type not in events:
                     continue
 
-                config = json.loads(ch.config)
-                msg_body = f"Indigo MFA Alert\nTenant: {tenant_id}\nEvent: {event_type}\nUser: {user_id}\nStatus: {status}\nDetails: {details}"
-
-                if ch.channel_type == 'WEBHOOK':
-                    requests.post(config['url'], json={"text": msg_body}, timeout=2)
-                elif ch.channel_type == 'EMAIL':
-                    import smtplib
-                    from email.message import EmailMessage
-                    msg = EmailMessage()
-                    msg.set_content(msg_body)
-                    msg['Subject'] = f"Indigo Alert: {status} - {user_id}"
-                    msg['From'] = config.get('sender', 'alert@indigo.local')
-                    msg['To'] = config['email']
-
-                    enc = config.get('encryption', 'STARTTLS')
-                    if enc == 'SSL':
-                        s = smtplib.SMTP_SSL(config['host'], int(config.get('port', 465)))
-                    else:
-                        s = smtplib.SMTP(config['host'], int(config.get('port', 25)))
-                        if enc == 'STARTTLS':
-                            s.starttls()
-
-                    if config.get('user') and config.get('pass'):
-                        s.login(config['user'], config['pass'])
-                    s.send_message(msg)
-                    s.quit()
+                channel_config = {
+                    "type": ch.channel_type,
+                    "config": json.loads(ch.config)
+                }
+                send_alert(tenant_id, event_type, user_id, status, details, channel_config)
             except Exception as e:
                 logger.error(f"Channel {ch.id} error: {e}")
     except Exception as e:
@@ -288,7 +267,9 @@ def log_and_record(event_type, user_id, status, details=""):
         logger.info(log_msg)
     elif status == "DURESS" or status == "ABUSE":
         logger.critical(f"🚨 {status} SIGNAL: {log_msg}")
-        send_webhook_alert(event_type, user_id, status, details)
+        # Legacy Global Webhook
+        send_legacy_webhook(event_type, user_id, status, details)
+        # Multi-Channel Alerts
         ACTIVE_THREATS.labels(status, tenant_id).inc()
         dispatch_alerts(event_type, user_id, status, details)
     else:

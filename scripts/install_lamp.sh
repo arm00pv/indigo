@@ -153,7 +153,10 @@ sudo apt-get install -y $PKGS
 
 # 2. Permissions
 echo "[2/8] Configuring Permissions..."
+# Create necessary directories for Health Check
+mkdir -p "$APP_DIR/logs" "$APP_DIR/backups"
 sudo chown -R www-data:www-data "$APP_DIR"
+sudo chmod 755 "$APP_DIR/logs" "$APP_DIR/backups"
 
 # 3. Python Env
 echo "[3/8] Setting up Python..."
