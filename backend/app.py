@@ -1252,6 +1252,10 @@ def api_stats():
     })
 
 # Unsecured Dashboard endpoint (Serves HTML)
+@app.route('/')
+def index():
+    return render_template('dashboard.html')
+
 @app.route('/dashboard')
 def dashboard():
     return render_template('dashboard.html')
