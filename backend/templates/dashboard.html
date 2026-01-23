@@ -42,7 +42,10 @@
         <div class="text-danger small mt-2" id="login-error" style="display:none;">Invalid Key or Connection Error</div>
       </div>
       <div class="modal-footer d-flex justify-content-between">
-        <button class="btn btn-sm btn-link text-muted text-decoration-none" onclick="showResetHelp()">Trouble logging in?</button>
+        <div class="d-flex flex-column">
+             <button class="btn btn-sm btn-link text-muted text-decoration-none text-start p-0 mb-1" onclick="showResetHelp()">Trouble logging in?</button>
+             <a href="/register-user" class="btn btn-sm btn-link text-primary text-decoration-none text-start p-0">Register New User</a>
+        </div>
         <button type="button" class="btn btn-primary" onclick="login()">Access Dashboard</button>
       </div>
     </div>
@@ -91,6 +94,10 @@
                 <option value="admin">Administrator Manager</option>
             </select>
             <div class="form-text small">Select the primary purpose of this deployment.</div>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Admin Username</label>
+            <input type="text" id="setup-username" class="form-control" placeholder="e.g. AdminUser">
         </div>
         <div class="mb-3">
             <label class="form-label">Create Admin API Key</label>
@@ -231,7 +238,11 @@
 
 <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4">
     <div class="container">
-        <a class="navbar-brand" href="#"><i class="fas fa-shield-alt me-2"></i>Indigo MFA Admin <span class="badge bg-light text-primary ms-2" style="font-size: 0.6em;" id="tenant-name"></span> <span class="badge bg-secondary ms-2" id="health-badge" style="font-size: 0.6em;">Checking Health...</span></a>
+        <a class="navbar-brand" href="#"><i class="fas fa-shield-alt me-2"></i>Indigo MFA Admin
+            <span class="badge bg-light text-primary ms-2" style="font-size: 0.6em;" id="tenant-name"></span>
+            <span class="badge bg-info text-dark ms-2" style="font-size: 0.6em; display:none;" id="admin-user-badge"></span>
+            <span class="badge bg-secondary ms-2" id="health-badge" style="font-size: 0.6em;">Checking Health...</span>
+        </a>
         <div class="d-flex align-items-center">
             <div class="dropdown me-3">
                 <button class="btn btn-light btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
@@ -546,6 +557,7 @@
     async function performSetup() {
         const key = document.getElementById('setup-key-input').value;
         const role = document.getElementById('setup-role').value;
+        const username = document.getElementById('setup-username').value;
 
         if (!key || key.length < 8) {
             alert("Key must be at least 8 characters.");
@@ -556,7 +568,7 @@
             const res = await fetch('/api/setup', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({key: key, role: role})
+                body: JSON.stringify({key: key, role: role, username: username})
             });
             const data = await res.json();
 
@@ -608,6 +620,11 @@
             // Update Branding
             if (data.tenant_id) {
                 document.getElementById('tenant-name').innerText = "Tenant: " + data.tenant_id;
+            }
+            if (data.admin_username) {
+                const badge = document.getElementById('admin-user-badge');
+                badge.innerText = data.admin_username;
+                badge.style.display = 'inline-block';
             }
 
             // Update Counters

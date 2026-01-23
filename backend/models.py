@@ -17,6 +17,7 @@ class ApiKey(db.Model):
     __tablename__ = 'api_keys'
     key_hash = db.Column(db.String(64), primary_key=True) # SHA256 of the key
     tenant_id = db.Column(db.String(36), db.ForeignKey('tenants.id'), nullable=False)
+    username = db.Column(db.String(64), nullable=True) # Identifier for the admin
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
 class User(db.Model):

@@ -170,6 +170,14 @@ def init_db_data():
         if 'last_lon' not in columns:
             logger.info("Migrating DB: Adding last_lon to user_security")
             db.session.execute(db.text("ALTER TABLE user_security ADD COLUMN last_lon FLOAT"))
+
+        # Migrate api_keys username
+        inspector = db.inspect(db.engine)
+        columns_keys = [c['name'] for c in inspector.get_columns('api_keys')]
+        if 'username' not in columns_keys:
+            logger.info("Migrating DB: Adding username to api_keys")
+            db.session.execute(db.text("ALTER TABLE api_keys ADD COLUMN username TEXT"))
+
         db.session.commit()
     except Exception as e:
         logger.warning(f"Migration check failed: {e}")
@@ -184,14 +192,6 @@ def init_db_command():
 
 def hash_key(key):
     return hashlib.sha256(key.encode()).hexdigest()
-
-def get_tenant_from_key(key):
-    """Resolves Tenant ID from API Key."""
-    h = hash_key(key)
-    api_key = db.session.get(ApiKey, h)
-    if api_key:
-        return api_key.tenant_id
-    return None
 
 def authenticate_request():
     """
@@ -208,10 +208,12 @@ def authenticate_request():
     # 2. Admin Key (Tenant Admin)
     admin_key = request.headers.get('X-Admin-Key') or request.args.get('key')
     if admin_key:
-        tenant_id = get_tenant_from_key(admin_key)
-        if tenant_id:
-            g.tenant_id = tenant_id
+        h = hash_key(admin_key)
+        api_key_obj = db.session.get(ApiKey, h)
+        if api_key_obj:
+            g.tenant_id = api_key_obj.tenant_id
             g.is_admin = True
+            g.admin_username = api_key_obj.username or "Admin"
             return
 
     # 3. Client Requests (Register/Auth)
@@ -281,6 +283,10 @@ def dispatch_alerts(event_type, user_id, status, details):
 def log_and_record(event_type, user_id, status, details=""):
     ip_address = request.remote_addr if request else "unknown"
     tenant_id = getattr(g, 'tenant_id', 'unknown')
+
+    # If admin action, use username
+    if event_type == "ADMIN" and getattr(g, 'is_admin', False):
+        user_id = getattr(g, 'admin_username', user_id)
 
     # Enrich with Location if Auth related
     if status in ["SUCCESS", "DURESS", "ABUSE"] and event_type in ["AUTH", "CHALLENGE"]:
@@ -372,6 +378,7 @@ def create_tenant():
 def create_api_key():
     tenant_id = request.json.get('tenant_id')
     raw_key = request.json.get('key') # Sysadmin provides the key secret, or we generate it
+    username = request.json.get('username')
 
     if not tenant_id or not raw_key:
         return jsonify({"error": "Missing tenant_id or key"}), 400
@@ -380,7 +387,7 @@ def create_api_key():
     if db.session.get(ApiKey, h):
         return jsonify({"error": "Key already exists"}), 400
 
-    db.session.add(ApiKey(key_hash=h, tenant_id=tenant_id))
+    db.session.add(ApiKey(key_hash=h, tenant_id=tenant_id, username=username))
     db.session.commit()
     return jsonify({"message": "Key registered for tenant"}), 201
 
@@ -952,7 +959,8 @@ def restore_command(filename):
 @app.cli.command("add-admin")
 @click.option("--key", prompt=True, hide_input=True, confirmation_prompt=True, help="The Admin API Key.")
 @click.option("--tenant", default="default", help="The Tenant ID (default: default).")
-def add_admin_command(key, tenant):
+@click.option("--username", prompt=True, help="Username for this admin.")
+def add_admin_command(key, tenant, username):
     """Adds a new Admin API Key."""
     h = hash_key(key)
 
@@ -966,9 +974,9 @@ def add_admin_command(key, tenant):
         print("Error: Key already exists.")
         return
 
-    db.session.add(ApiKey(key_hash=h, tenant_id=tenant))
+    db.session.add(ApiKey(key_hash=h, tenant_id=tenant, username=username))
     db.session.commit()
-    print(f"Admin Key added for tenant '{tenant}'.")
+    print(f"Admin Key added for tenant '{tenant}' with username '{username}'.")
 
 @app.cli.command("prune-logs")
 @click.option("--days", default=30, help="Retention days.")
@@ -1000,6 +1008,7 @@ def setup_admin():
 
     raw_key = request.json.get('key')
     role = request.json.get('role', 'validator')
+    username = request.json.get('username', 'Admin')
 
     if not raw_key or len(raw_key) < 8:
         return jsonify({"error": "Invalid key provided (min 8 chars)."}), 400
@@ -1010,7 +1019,7 @@ def setup_admin():
     if not db.session.get(Tenant, "default"):
         db.session.add(Tenant(id="default", name="Default Organization"))
 
-    db.session.add(ApiKey(key_hash=h, tenant_id="default"))
+    db.session.add(ApiKey(key_hash=h, tenant_id="default", username=username))
 
     # Store Role
     role_setting = db.session.get(SystemSetting, ('system_installation_role', 'default'))
@@ -1304,6 +1313,7 @@ def api_stats():
 
     return jsonify({
         "tenant_id": tenant_id,
+        "admin_username": getattr(g, 'admin_username', 'Admin'),
         "total_users": total_users,
         "blocked_users": blocked,
         "threat_count": threats,

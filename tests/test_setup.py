@@ -40,13 +40,19 @@ def test_setup_flow(client):
 
     # 2. Setup Admin (Success)
     new_key = "secure-setup-key-123"
-    resp = client.post('/api/setup', json={"key": new_key, "role": "enterprise"})
+    username = "SysMaster"
+    resp = client.post('/api/setup', json={"key": new_key, "role": "enterprise", "username": username})
     assert resp.status_code == 201
     assert "Setup Complete" in resp.get_json()['message']
 
-    # Check Role Storage
+    # Check Role Storage & Username
     from backend.models import SystemSetting
     with app.app_context():
+        # Check Username
+        h = hashlib.sha256(new_key.encode()).hexdigest()
+        key_obj = db.session.get(ApiKey, h)
+        assert key_obj.username == username
+
         role = db.session.get(SystemSetting, ('system_installation_role', 'default'))
         assert role.value == 'enterprise'
 
