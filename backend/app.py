@@ -1402,7 +1402,9 @@ def health():
 def metrics():
     return Response(generate_latest(), mimetype=CONTENT_TYPE_LATEST)
 
+# Ensure DB is initialized and migrated on startup (for Gunicorn/Production)
+with app.app_context():
+    init_db_data()
+
 if __name__ == "__main__":
-    with app.app_context():
-        init_db_data()
     app.run(host='0.0.0.0', port=5000)

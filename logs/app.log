@@ -252,3 +252,8 @@
 2026-01-23 20:59:52,885 - WARNING - [AUTH] Admin access denied from 127.0.0.1
 2026-01-23 20:59:52,885 - INFO - 127.0.0.1 - - [23/Jan/2026 20:59:52] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
 2026-01-23 20:59:52,906 - INFO - 127.0.0.1 - - [23/Jan/2026 20:59:52] "GET /admin/users HTTP/1.1" 200 -
+2026-01-23 22:00:28,858 - INFO - System Initialized (1 keys found).
+2026-01-23 22:00:28,874 - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on http://127.0.0.1:5000
+2026-01-23 22:00:28,874 - INFO - [33mPress CTRL+C to quit[0m
+2026-01-23 22:03:46,375 - INFO - 127.0.0.1 - - [23/Jan/2026 22:03:46] "GET /api/system/status HTTP/1.1" 200 -
