@@ -184,6 +184,11 @@
                 <input type="number" class="form-control" id="conf-lock-duration" min="1">
                 <div class="form-text">How long the temporary lock lasts.</div>
             </div>
+            <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="conf-self-reg">
+                <label class="form-check-label" for="conf-self-reg">Allow Self-Registration</label>
+                <div class="form-text">Enables the public /register-user page.</div>
+            </div>
         </form>
       </div>
       <div class="modal-footer">
@@ -1123,15 +1128,16 @@
     function openSettings() {
         if(!ADMIN_KEY) return;
 
-        fetch('/api/stats', {headers: {'X-Admin-Key': ADMIN_KEY}})
+        // Fetch values from settings endpoint directly for consistency
+        fetch('/admin/settings', {headers: {'X-Admin-Key': ADMIN_KEY}})
         .then(res => res.json())
         .then(data => {
-            if(data.policies) {
-                document.getElementById('conf-soft-lock').value = data.policies.policy_max_failures_soft_lock;
-                document.getElementById('conf-temp-lock').value = data.policies.policy_max_failures_temp_lock;
-                document.getElementById('conf-lock-duration').value = data.policies.policy_temp_lock_duration_seconds;
-                new bootstrap.Modal(document.getElementById('settingsModal')).show();
-            }
+            document.getElementById('conf-soft-lock').value = data.policy_max_failures_soft_lock || 10;
+            document.getElementById('conf-temp-lock').value = data.policy_max_failures_temp_lock || 5;
+            document.getElementById('conf-lock-duration').value = data.policy_temp_lock_duration_seconds || 900;
+            document.getElementById('conf-self-reg').checked = (data.allow_self_registration === 'true');
+
+            new bootstrap.Modal(document.getElementById('settingsModal')).show();
         });
     }
 
@@ -1139,6 +1145,7 @@
         const soft = document.getElementById('conf-soft-lock').value;
         const temp = document.getElementById('conf-temp-lock').value;
         const dur = document.getElementById('conf-lock-duration').value;
+        const selfReg = document.getElementById('conf-self-reg').checked;
 
         try {
             await fetch('/admin/settings', {
@@ -1147,7 +1154,8 @@
                 body: JSON.stringify({
                     policy_max_failures_soft_lock: soft,
                     policy_max_failures_temp_lock: temp,
-                    policy_temp_lock_duration_seconds: dur
+                    policy_temp_lock_duration_seconds: dur,
+                    allow_self_registration: selfReg
                 })
             });
             // Hide modal

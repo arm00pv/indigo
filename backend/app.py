@@ -1330,6 +1330,56 @@ def index():
 def dashboard():
     return render_template('dashboard.html')
 
+@app.route('/register-user', methods=['GET', 'POST'])
+def register_user_ui():
+    """Self-service registration page for users."""
+    # Check if enabled
+    setting = db.session.get(SystemSetting, ('allow_self_registration', 'default'))
+    if not setting or setting.value != 'true':
+        return render_template('register.html', error="Self-registration is disabled by the administrator.")
+
+    if request.method == 'POST':
+        email = request.form.get('email')
+        if not email:
+            return render_template('register.html', error="Email is required.")
+
+        # Check if user already exists
+        if db.session.get(User, (email, 'default')):
+             return render_template('register.html', error="User already exists.")
+
+        # Generate enrollment QR
+        config = {
+            "url": request.host_url.rstrip('/'),
+            "tenant_id": "default",
+            "user_id": email
+        }
+        payload_str = json.dumps(config)
+
+        # Generate QR Code
+        qr = qrcode.QRCode(version=1, box_size=10, border=4)
+        qr.add_data(payload_str)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+        b64_img = base64.b64encode(buf.getvalue()).decode('utf-8')
+        data_uri = f"data:image/png;base64,{b64_img}"
+
+        smart_code = base64.b64encode(payload_str.encode('utf-8')).decode('utf-8')
+
+        return render_template('register.html', success=True, email=email, qr_image=data_uri, smart_code=smart_code)
+
+    return render_template('register.html')
+
+@app.route('/auth/sso/login')
+def sso_login():
+    """Stub for SSO Login flow (OIDC)."""
+    # In a real implementation, this would redirect to Google/Microsoft/Okta
+    # For now, it just returns a placeholder
+    return jsonify({"message": "SSO Login Flow Placeholder. Configure OIDC provider in settings."}), 501
+
 @app.route('/health')
 def health():
     try:
