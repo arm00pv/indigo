@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.0] - 2026-01-23
+### Added
+- **User Registration**:
+    - **Self-Service**: Added public `/register-user` page for self-enrollment, controlled by `allow_self_registration` setting.
+    - **SSO Stub**: Placeholder endpoint `/auth/sso/login` for future OIDC integration.
+- **Admin Experience**:
+    - **Usernames**: Admin API Keys now support a `username` field for identification in logs and the dashboard.
+    - **Dashboard**: Added "Register New User" link to the login modal and an Admin Badge to the navbar.
+- **Mobile Development**:
+    - **Scaffolding**: Enhanced `android_client` (Gradle) and `ios_client` (SwiftUI) with build files to be project-ready.
+    - **Quick Start**: Updated `MOBILE_DEV_GUIDE.md` with explicit build instructions for all platforms.
+
+### Fixed
+- **Production**: Fixed a critical issue where database migrations (e.g., adding `username` column) were not running under Gunicorn/Production environments.
+- **Settings**: Fixed a bug where boolean settings (e.g., "Allow Self-Registration") were saved incorrectly as capitalized strings ("True") instead of lowercase ("true"), causing logic failures.
+
 ## [2.4.0] - 2026-01-22
 ### Added
 - **Security Hardening**:
@@ -181,4 +197,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Uses ECDH + HKDF + AES-GCM for encrypted OTP delivery.
 - **Architecture**:
     - Split project into `backend` (Flask API) and `mobile_client` (Python CLI simulator).
-    - Replaced SMS/MMS with data-찼 channels.
+    - Replaced SMS/MMS with data-channels.

@@ -4,17 +4,48 @@ This guide provides technical specifications and implementation details for buil
 
 ---
 
-## 📂 Reference Implementations
+## 📂 Quick Start: Deploying the Apps
 
-We provide full reference implementations for all major platforms in the repository:
+We provide full reference implementations for all major platforms.
 
-*   **Flutter (Cross-Platform):** `flutter_app/` (Production Ready)
-*   **Android (Kotlin):** `android_client/` (Reference)
-*   **iOS (Swift):** `ios_client/` (Reference)
+### 🦋 1. Flutter (Cross-Platform) - Recommended
+This is the most complete client, featuring QR scanning, secure storage, and UI.
+
+1.  **Prerequisites:** Install [Flutter SDK](https://docs.flutter.dev/get-started/install).
+2.  **Open Project:**
+    ```bash
+    cd flutter_app
+    flutter pub get
+    ```
+3.  **Run:**
+    ```bash
+    flutter run
+    ```
+    *   (Android emulator or iOS simulator required).
+
+### 🤖 2. Android Native (Kotlin)
+A native reference implementation for developers who prefer pure Kotlin.
+
+1.  **Open Project:** Launch **Android Studio** and select `Open` -> navigate to `android_client/`.
+2.  **Sync:** Allow Gradle to sync dependencies.
+3.  **Run:** Click the "Run" button (Green Arrow) to deploy to a connected device/emulator.
+
+### 🍏 3. iOS Native (Swift)
+A native reference implementation using SwiftUI and CryptoKit.
+
+1.  **Create Project:**
+    *   Open **Xcode**.
+    *   Select "Create a new Xcode project" -> "App".
+    *   Name it `IndigoMFA`.
+    *   Select "SwiftUI" for Interface.
+2.  **Import Files:**
+    *   Delete the default `ContentView.swift` and `IndigoMFAApp.swift`.
+    *   Drag and drop the files from `ios_client/IndigoMFA/` (`ContentView.swift`, `CryptoManager.swift`, `IndigoMFAApp.swift`) into your Xcode project navigator.
+3.  **Run:** Select a Simulator and click the "Play" button.
 
 ---
 
-## 🏗️ 1. Architecture Overview
+## 🏗️ Architecture Overview
 
 The mobile app acts as a **Secure Enclave** that stores the user's Private Key. The server *never* sees this key.
 
@@ -27,62 +58,7 @@ The mobile app acts as a **Secure Enclave** that stores the user's Private Key. 
 
 ---
 
-## 🤖 2. Android Implementation (Kotlin)
-
-### Setup
-1.  Open `android_client/` in **Android Studio**.
-2.  Sync Gradle files.
-3.  Run on Emulator or Device.
-
-### Dependencies
-The reference implementation uses standard Android Crypto APIs (KeyStore, Cipher) to ensure maximum compatibility without external crypto libraries, though Google Tink is recommended for production apps.
-
-### Key Logic: `CryptoManager.kt`
-The `CryptoManager` object handles the ECIES decryption pipeline manually to match the backend's format:
-1.  **Parse Blob:** Splits the encrypted payload into `[Ephemeral PubKey (65b)] [IV (12b)] [Ciphertext]`.
-2.  **Load Ephemeral Key:** Constructs an X.509 spec from the raw X9.62 point.
-3.  **ECDH:** Derives shared secret using `KeyAgreement`.
-4.  **HKDF:** Derives AES key using `HmacSHA256` with 32 null bytes as salt.
-5.  **AES-GCM:** Decrypts the OTP.
-
----
-
-## 🍏 3. iOS Implementation (Swift)
-
-### Setup
-1.  Open `ios_client/` (or create a new project and drag in the files) in **Xcode**.
-2.  Ensure Target is set to iOS 14+.
-3.  Build and Run.
-
-### Dependencies
-Uses native `CryptoKit` for all operations.
-
-### Key Logic: `CryptoManager.swift`
-1.  **ECIES:** Uses `P256.KeyAgreement.PrivateKey` to perform ECDH.
-2.  **HKDF:** Uses `sharedSecret.hkdfDerivedSymmetricKey` matching backend parameters.
-3.  **AES-GCM:** Uses `AES.GCM.open`.
-
----
-
-## 🦋 4. Flutter Implementation (Production)
-
-The `flutter_app/` directory contains a complete application with QR scanning, secure storage, and UI.
-
-### Build
-```bash
-cd flutter_app
-flutter pub get
-flutter run
-```
-
-### Key Libraries
-- `cryptography`: Handles ECIES/HKDF.
-- `flutter_secure_storage`: secure enclave abstraction.
-- `mobile_scanner`: QR code reading.
-
----
-
-## 🔌 5. Networking Logic (All Platforms)
+## 🔌 Networking Logic (All Platforms)
 
 Ensure `X-Tenant-ID` header is sent with every request.
 
@@ -104,7 +80,7 @@ Ensure `X-Tenant-ID` header is sent with every request.
 
 ---
 
-## 🚨 6. Duress Mode Implementation
+## 🚨 Duress Mode Implementation
 
 If the user enters their **Duress PIN** instead of the standard PIN:
 1.  Decrypt the OTP as normal.
@@ -112,4 +88,4 @@ If the user enters their **Duress PIN** instead of the standard PIN:
     *   `123456` -> `123457`
     *   `123459` -> `123450`
 3.  Submit the modified OTP.
-4.  The server validates it as "DURESS" and triggers the Silent Alarm.
+4.  The server validates it as "DURESS" and triggers the Silent Alarm (Webhook/Email).

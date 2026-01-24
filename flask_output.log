@@ -1,26 +1,25 @@
-2026-01-23 23:40:55,998 - INFO - Initialized Database with Provided Admin Key.
-2026-01-23 23:40:56,014 - INFO - System Initialized (1 keys found).
+2026-01-24 19:02:53,076 - INFO - System Initialized (1 keys found).
  * Serving Flask app 'backend.app:app'
  * Debug mode: off
-2026-01-23 23:40:56,021 - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+2026-01-24 19:02:53,083 - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
  * Running on http://127.0.0.1:5000
-2026-01-23 23:40:56,022 - INFO - [33mPress CTRL+C to quit[0m
-2026-01-23 23:41:19,997 - INFO - 127.0.0.1 - - [23/Jan/2026 23:41:19] "GET /dashboard HTTP/1.1" 200 -
-2026-01-23 23:41:20,311 - WARNING - [AUTH] Admin access denied from 127.0.0.1
-2026-01-23 23:41:20,315 - INFO - 127.0.0.1 - - [23/Jan/2026 23:41:20] "GET /api/system/status HTTP/1.1" 200 -
-2026-01-23 23:41:20,315 - INFO - 127.0.0.1 - - [23/Jan/2026 23:41:20] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
-2026-01-23 23:41:21,093 - INFO - 127.0.0.1 - - [23/Jan/2026 23:41:21] "GET /register-user HTTP/1.1" 200 -
-2026-01-23 23:41:21,200 - INFO - 127.0.0.1 - - [23/Jan/2026 23:41:21] "GET /dashboard HTTP/1.1" 200 -
-2026-01-23 23:41:21,248 - INFO - 127.0.0.1 - - [23/Jan/2026 23:41:21] "GET /api/system/status HTTP/1.1" 200 -
-2026-01-23 23:41:21,250 - WARNING - [AUTH] Admin access denied from 127.0.0.1
-2026-01-23 23:41:21,251 - INFO - 127.0.0.1 - - [23/Jan/2026 23:41:21] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
-2026-01-23 23:41:21,798 - INFO - 127.0.0.1 - - [23/Jan/2026 23:41:21] "GET /admin/settings HTTP/1.1" 200 -
-2026-01-23 23:41:21,809 - INFO - 127.0.0.1 - - [23/Jan/2026 23:41:21] "GET /dashboard HTTP/1.1" 200 -
-2026-01-23 23:41:21,861 - INFO - 127.0.0.1 - - [23/Jan/2026 23:41:21] "GET /admin/notifications HTTP/1.1" 200 -
-2026-01-23 23:41:21,863 - INFO - 127.0.0.1 - - [23/Jan/2026 23:41:21] "GET /api/system/status HTTP/1.1" 200 -
-2026-01-23 23:41:21,865 - WARNING - [AUTH] Admin access denied from 127.0.0.1
-2026-01-23 23:41:21,870 - INFO - 127.0.0.1 - - [23/Jan/2026 23:41:21] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
-2026-01-23 23:41:21,880 - INFO - 127.0.0.1 - - [23/Jan/2026 23:41:21] "GET /admin/system/health HTTP/1.1" 200 -
-2026-01-23 23:41:21,905 - WARNING - [AUTH] Admin access denied from 127.0.0.1
-2026-01-23 23:41:21,906 - INFO - 127.0.0.1 - - [23/Jan/2026 23:41:21] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
-2026-01-23 23:41:21,915 - INFO - 127.0.0.1 - - [23/Jan/2026 23:41:21] "GET /admin/users HTTP/1.1" 200 -
+2026-01-24 19:02:53,083 - INFO - [33mPress CTRL+C to quit[0m
+2026-01-24 19:03:14,970 - INFO - 127.0.0.1 - - [24/Jan/2026 19:03:14] "GET /dashboard HTTP/1.1" 200 -
+2026-01-24 19:03:15,239 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-24 19:03:15,240 - INFO - 127.0.0.1 - - [24/Jan/2026 19:03:15] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
+2026-01-24 19:03:15,242 - INFO - 127.0.0.1 - - [24/Jan/2026 19:03:15] "GET /api/system/status HTTP/1.1" 200 -
+2026-01-24 19:03:15,968 - INFO - 127.0.0.1 - - [24/Jan/2026 19:03:15] "GET /register-user HTTP/1.1" 200 -
+2026-01-24 19:03:16,047 - INFO - 127.0.0.1 - - [24/Jan/2026 19:03:16] "GET /dashboard HTTP/1.1" 200 -
+2026-01-24 19:03:16,081 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-24 19:03:16,082 - INFO - 127.0.0.1 - - [24/Jan/2026 19:03:16] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
+2026-01-24 19:03:16,086 - INFO - 127.0.0.1 - - [24/Jan/2026 19:03:16] "GET /api/system/status HTTP/1.1" 200 -
+2026-01-24 19:03:16,587 - INFO - 127.0.0.1 - - [24/Jan/2026 19:03:16] "GET /admin/settings HTTP/1.1" 200 -
+2026-01-24 19:03:16,597 - INFO - 127.0.0.1 - - [24/Jan/2026 19:03:16] "GET /dashboard HTTP/1.1" 200 -
+2026-01-24 19:03:16,626 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-24 19:03:16,631 - INFO - 127.0.0.1 - - [24/Jan/2026 19:03:16] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
+2026-01-24 19:03:16,634 - INFO - 127.0.0.1 - - [24/Jan/2026 19:03:16] "GET /api/system/status HTTP/1.1" 200 -
+2026-01-24 19:03:16,639 - INFO - 127.0.0.1 - - [24/Jan/2026 19:03:16] "GET /admin/notifications HTTP/1.1" 200 -
+2026-01-24 19:03:16,640 - INFO - 127.0.0.1 - - [24/Jan/2026 19:03:16] "GET /admin/system/health HTTP/1.1" 200 -
+2026-01-24 19:03:16,651 - WARNING - [AUTH] Admin access denied from 127.0.0.1
+2026-01-24 19:03:16,653 - INFO - 127.0.0.1 - - [24/Jan/2026 19:03:16] "[31m[1mGET /api/stats HTTP/1.1[0m" 401 -
+2026-01-24 19:03:16,661 - INFO - 127.0.0.1 - - [24/Jan/2026 19:03:16] "GET /admin/users HTTP/1.1" 200 -
