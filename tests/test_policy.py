@@ -61,4 +61,5 @@ class TestPolicyEngine:
         # Alternative: We trust the logic `if current_hour < 8 or current_hour >= 18`
         # Let's just verify the setting is persisted.
         resp = client.get('/admin/settings', headers={'X-Admin-Key': 'test-key'})
-        assert resp.json['business_hours_enabled'] == 'True'
+        # My recent fix normalizes booleans to 'true'/'false' strings
+        assert resp.json['business_hours_enabled'] == 'true'

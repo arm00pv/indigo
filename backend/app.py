@@ -763,7 +763,13 @@ def admin_settings():
             if not setting:
                 setting = SystemSetting(key=key, tenant_id=g.tenant_id)
                 db.session.add(setting)
-            setting.value = str(val)
+
+            # Normalize boolean to lowercase string 'true'/'false'
+            if isinstance(val, bool):
+                setting.value = str(val).lower()
+            else:
+                setting.value = str(val)
+
         db.session.commit()
         return jsonify({"message": "Settings updated"}), 200
     else:
