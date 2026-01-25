@@ -800,6 +800,44 @@ def admin_blacklist():
         items = IPBlacklist.query.filter_by(tenant_id=g.tenant_id).order_by(IPBlacklist.created_at.desc()).all()
         return jsonify([{"cidr": i.cidr, "reason": i.reason, "created_at": i.created_at} for i in items])
 
+@app.route('/admin/system/admins', methods=['GET', 'POST', 'DELETE'])
+@require_admin
+def admin_system_admins():
+    if request.method == 'GET':
+        admins = ApiKey.query.filter_by(tenant_id=g.tenant_id).all()
+        return jsonify([{
+            "key_hash": a.key_hash,
+            "username": a.username,
+            "created_at": a.created_at.isoformat()
+        } for a in admins])
+
+    if request.method == 'POST':
+        username = request.json.get('username')
+        if not username: return jsonify({"error": "Username required"}), 400
+
+        raw_key = secrets.token_urlsafe(32)
+        h = hash_key(raw_key)
+
+        db.session.add(ApiKey(key_hash=h, tenant_id=g.tenant_id, username=username))
+        db.session.commit()
+
+        log_and_record("ADMIN", "system", "SUCCESS", f"Created new admin: {username}")
+        return jsonify({"message": "Admin created", "key": raw_key, "username": username})
+
+    if request.method == 'DELETE':
+        key_hash = request.args.get('hash')
+        if not key_hash: return jsonify({"error": "Hash required"}), 400
+
+        # Self-revocation check
+        current_key_hash = hash_key(request.headers.get('X-Admin-Key'))
+        if key_hash == current_key_hash:
+             return jsonify({"error": "Cannot revoke your own key."}), 400
+
+        ApiKey.query.filter_by(key_hash=key_hash, tenant_id=g.tenant_id).delete()
+        db.session.commit()
+        log_and_record("ADMIN", "system", "REVOKE", f"Revoked admin key: {key_hash[:8]}...")
+        return jsonify({"message": "Admin revoked"})
+
 @app.route('/admin/export/logs')
 @require_admin
 def admin_export_logs():

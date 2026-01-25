@@ -52,6 +52,62 @@
   </div>
 </div>
 
+<!-- Manage Admins Modal -->
+<div class="modal fade" id="manageAdminsModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Manage Administrators</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <ul class="list-group mb-3" id="admin-list"></ul>
+        <hr>
+        <h6>Create New Admin</h6>
+        <div class="input-group">
+            <input type="text" id="new-admin-username" class="form-control" placeholder="Username">
+            <button class="btn btn-success" onclick="createAdmin()">Create</button>
+        </div>
+        <div id="new-admin-result" class="alert alert-success mt-2" style="display:none;">
+            <strong>New Key:</strong> <span id="new-admin-key" class="text-break font-monospace"></span>
+            <p class="mb-0 small">Copy this now. It will not be shown again.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- User Details Modal -->
+<div class="modal fade" id="userDetailsModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">User Details: <span id="detail-user-id"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row mb-3">
+            <div class="col-md-6">
+                <h6>Security Status</h6>
+                <div id="detail-security-stats"></div>
+            </div>
+            <div class="col-md-6">
+                <h6>Actions</h6>
+                <div id="detail-actions"></div>
+            </div>
+        </div>
+        <h6>Recent Audit Logs</h6>
+        <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+            <table class="table table-sm table-striped">
+                <thead><tr><th>Time</th><th>Event</th><th>Status</th><th>Details</th></tr></thead>
+                <tbody id="detail-logs-body"></tbody>
+            </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Reset Help Modal -->
 <div class="modal fade" id="resetHelpModal" tabindex="-1">
   <div class="modal-dialog">
@@ -244,6 +300,9 @@
             <span class="badge bg-secondary ms-2" id="health-badge" style="font-size: 0.6em;">Checking Health...</span>
         </a>
         <div class="d-flex align-items-center">
+            <button class="btn btn-light btn-sm me-2" onclick="openManageAdmins()" title="Manage Admins">
+                <i class="fas fa-users-cog"></i>
+            </button>
             <div class="dropdown me-3">
                 <button class="btn btn-light btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
                     <i class="fas fa-download me-1"></i> Export Reports
@@ -459,12 +518,15 @@
                 </div>
                 <div class="card-body">
                     <div class="input-group mb-3">
-                        <select id="channel-type" class="form-select" style="max-width: 150px;" onchange="toggleEmailFields()">
+                        <select id="channel-type" class="form-select" style="max-width: 150px;" onchange="toggleChannelFields()">
                             <option value="WEBHOOK">Webhook</option>
                             <option value="EMAIL">Email</option>
+                            <option value="MAILGUN">Mailgun</option>
                         </select>
                         <input type="text" id="channel-target" class="form-control" placeholder="Webhook URL or Email Address">
                     </div>
+
+                    <!-- SMTP Fields -->
                     <div id="email-fields" style="display:none;" class="mb-3 border p-3 rounded bg-light">
                         <h6 class="text-muted small">SMTP Configuration</h6>
                         <div class="row g-2">
@@ -479,6 +541,16 @@
                             </div>
                             <div class="col-md-6"><input type="text" id="smtp-user" class="form-control form-control-sm" placeholder="Username/Email"></div>
                             <div class="col-md-6"><input type="password" id="smtp-pass" class="form-control form-control-sm" placeholder="Password"></div>
+                        </div>
+                    </div>
+
+                    <!-- Mailgun Fields -->
+                    <div id="mailgun-fields" style="display:none;" class="mb-3 border p-3 rounded bg-light">
+                        <h6 class="text-muted small">Mailgun Configuration</h6>
+                        <div class="row g-2">
+                            <div class="col-md-6"><input type="text" id="mg-domain" class="form-control form-control-sm" placeholder="Domain (e.g. mg.example.com)"></div>
+                            <div class="col-md-6"><input type="password" id="mg-key" class="form-control form-control-sm" placeholder="API Key"></div>
+                            <div class="col-md-6"><input type="text" id="mg-sender" class="form-control form-control-sm" placeholder="Sender (e.g. alert@mg.example.com)"></div>
                         </div>
                     </div>
                     <button class="btn btn-dark w-100" onclick="addChannel()">Add Channel</button>
@@ -747,15 +819,14 @@
 
                 const row = `<tr>
                     <td class="ps-3 small fw-bold">
-                        ${u.user_id}
+                        <a href="#" onclick="viewUserDetails('${u.user_id}')" class="text-decoration-none">${u.user_id}</a>
                         ${backupBadge}
                         ${trackingInfo ? `<i class="fas fa-info-circle text-muted ms-1" title="${trackingInfo}" style="cursor:help; font-size:0.8em;"></i>` : ''}
                     </td>
                     <td><span class="badge ${badge} status-badge">${u.status}</span></td>
                     <td>
-                        <button class="btn btn-xs btn-outline-dark" title="Download PDF" onclick="downloadPDF('${u.user_id}')"><i class="fas fa-file-pdf"></i></button>
+                        <button class="btn btn-xs btn-outline-primary" title="Details" onclick="viewUserDetails('${u.user_id}')"><i class="fas fa-search"></i></button>
                         <button class="btn btn-xs btn-outline-danger" title="Lock" onclick="lockUser('${u.user_id}')"><i class="fas fa-lock"></i></button>
-                        <button class="btn btn-xs btn-outline-success" title="Unlock" onclick="unlockUser('${u.user_id}')"><i class="fas fa-unlock"></i></button>
                     </td>
                 </tr>`;
                 tbody.innerHTML += row;
@@ -1063,20 +1134,23 @@
         } catch(e) {}
     }
 
-    function toggleEmailFields() {
+    function toggleChannelFields() {
         const type = document.getElementById('channel-type').value;
         document.getElementById('email-fields').style.display = type === 'EMAIL' ? 'block' : 'none';
-        document.getElementById('channel-target').placeholder = type === 'EMAIL' ? 'Recipient Email' : 'Webhook URL';
+        document.getElementById('mailgun-fields').style.display = type === 'MAILGUN' ? 'block' : 'none';
+
+        if (type === 'WEBHOOK') document.getElementById('channel-target').placeholder = 'Webhook URL';
+        else document.getElementById('channel-target').placeholder = 'Recipient Email';
     }
 
     async function addChannel() {
         const type = document.getElementById('channel-type').value;
         const target = document.getElementById('channel-target').value;
-        if(!target) return alert("Missing target");
+        if(!target) return alert("Missing target (Email or URL)");
 
         let config = {};
         if(type === 'WEBHOOK') config = {url: target};
-        if(type === 'EMAIL') {
+        else if(type === 'EMAIL') {
             const host = document.getElementById('smtp-host').value;
             const port = document.getElementById('smtp-port').value;
             const enc = document.getElementById('smtp-enc').value;
@@ -1086,6 +1160,14 @@
             if(!host || !port) return alert("Missing SMTP Host/Port");
 
             config = {email: target, host: host, port: port, encryption: enc, user: user, pass: pass};
+        }
+        else if(type === 'MAILGUN') {
+            const domain = document.getElementById('mg-domain').value;
+            const key = document.getElementById('mg-key').value;
+            const sender = document.getElementById('mg-sender').value;
+
+            if(!domain || !key) return alert("Missing Mailgun Domain/Key");
+            config = {email: target, domain: domain, api_key: key, sender: sender};
         }
 
         try {
@@ -1140,6 +1222,98 @@
             console.error(e);
             alert("Error fetching admin logs");
         }
+    }
+
+    function openManageAdmins() {
+        if(!ADMIN_KEY) return;
+        fetch('/admin/system/admins', {headers: {'X-Admin-Key': ADMIN_KEY}})
+        .then(res => res.json())
+        .then(data => {
+            const list = document.getElementById('admin-list');
+            list.innerHTML = '';
+            data.forEach(admin => {
+                list.innerHTML += `<li class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>${admin.username || 'Unknown'}</strong>
+                        <div class="text-muted small text-truncate" style="max-width: 200px;">${admin.key_hash.substring(0,10)}...</div>
+                    </div>
+                    <button class="btn btn-sm btn-outline-danger" onclick="revokeAdmin('${admin.key_hash}')">Revoke</button>
+                </li>`;
+            });
+            new bootstrap.Modal(document.getElementById('manageAdminsModal')).show();
+        });
+    }
+
+    async function createAdmin() {
+        const username = document.getElementById('new-admin-username').value;
+        if(!username) return alert("Username required");
+
+        try {
+            const res = await fetch('/admin/system/admins', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'X-Admin-Key': ADMIN_KEY},
+                body: JSON.stringify({username: username})
+            });
+            const data = await res.json();
+            document.getElementById('new-admin-key').innerText = data.key;
+            document.getElementById('new-admin-result').style.display = 'block';
+            openManageAdmins(); // Refresh list
+        } catch(e) { alert("Error creating admin"); }
+    }
+
+    async function revokeAdmin(hash) {
+        if(!confirm("Revoke access for this admin?")) return;
+        try {
+            await fetch(`/admin/system/admins?hash=${hash}`, {
+                method: 'DELETE',
+                headers: {'X-Admin-Key': ADMIN_KEY}
+            });
+            openManageAdmins();
+        } catch(e) { alert("Error revoking admin"); }
+    }
+
+    function viewUserDetails(userId) {
+        // Mock data or fetch real details
+        document.getElementById('detail-user-id').innerText = userId;
+        document.getElementById('detail-security-stats').innerText = "Loading...";
+        document.getElementById('detail-logs-body').innerHTML = "Loading...";
+
+        // Populate actions dynamically
+        const actionsDiv = document.getElementById('detail-actions');
+        actionsDiv.innerHTML = `
+            <button class="btn btn-sm btn-outline-danger" onclick="lockUser('${userId}')"><i class="fas fa-lock me-1"></i> Lock User</button>
+            <button class="btn btn-sm btn-outline-success" onclick="unlockUser('${userId}')"><i class="fas fa-unlock me-1"></i> Unlock User</button>
+            <button class="btn btn-sm btn-outline-dark" onclick="downloadPDF('${userId}')"><i class="fas fa-file-pdf me-1"></i> Enrollment PDF</button>
+        `;
+
+        new bootstrap.Modal(document.getElementById('userDetailsModal')).show();
+
+        // Fetch specific logs (We need to update backend export to filter by user_id first)
+        // Actually, backend/export/logs logic: if filter_type == 'threats' etc.
+        // We can just add a simple filter param for user_id on the frontend side or update backend?
+        // Let's implement a client-side filter for now since the main fetch gets recent logs,
+        // OR add a quick fetch for recent logs for user.
+
+        // Re-using fetchUsers() data would be efficient, but let's fetch specific logs from a new endpoint or filter existing.
+        // Let's update backend to support user_id filter in export/logs for simplicity
+
+        fetch(`/admin/export/logs?format=json&filter=all&key=${ADMIN_KEY}`)
+        .then(res => res.json())
+        .then(data => {
+            const userLogs = data.filter(l => l.user === userId).slice(0, 10);
+            const tbody = document.getElementById('detail-logs-body');
+            tbody.innerHTML = '';
+            userLogs.forEach(log => {
+                let badge = log.status === 'SUCCESS' ? 'bg-success' : 'bg-warning';
+                tbody.innerHTML += `<tr>
+                    <td class="small text-muted">${log.timestamp}</td>
+                    <td>${log.event}</td>
+                    <td><span class="badge ${badge}">${log.status}</span></td>
+                    <td class="small">${log.details}</td>
+                </tr>`;
+            });
+            if(userLogs.length === 0) tbody.innerHTML = '<tr><td colspan="4" class="text-center">No recent logs.</td></tr>';
+        });
     }
 
     function openSettings() {

@@ -16,9 +16,9 @@ import java.net.URL
 
 class MainActivity : AppCompatActivity() {
 
-    private val baseUrl = "http://10.0.2.2:5000" // Android Emulator localhost
-    private val tenantId = "default"
-    private var userId = "test_user" // Hardcoded or input
+    private var baseUrl = "http://10.0.2.2:5000" // Default, overridden by Config
+    private var tenantId = "default"
+    private var userId = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -31,12 +31,49 @@ class MainActivity : AppCompatActivity() {
             // Already exists or error
         }
 
-        findViewById<Button>(R.id.btnRegister).setOnClickListener {
-            register()
+        findViewById<Button>(R.id.btnConfig).setOnClickListener {
+            val input = findViewById<EditText>(R.id.etSmartCode).text.toString()
+            if (input.isNotEmpty()) {
+                parseAndRegister(input)
+            }
         }
 
         findViewById<Button>(R.id.btnAuth).setOnClickListener {
             authenticate()
+        }
+    }
+
+    private fun parseAndRegister(jsonString: String) {
+        try {
+            // Smart Code might be Base64 encoded or raw JSON
+            val jsonStr = if (!jsonString.trim().startsWith("{")) {
+                String(android.util.Base64.decode(jsonString, android.util.Base64.DEFAULT))
+            } else {
+                jsonString
+            }
+
+            val config = JSONObject(jsonStr)
+            // Parse Config
+            // Expected: {"url": "...", "tenant_id": "...", "user_id": "..."}
+
+            val rawUrl = config.optString("url", baseUrl)
+            // Fix localhost for Emulator if needed
+            baseUrl = rawUrl.replace("localhost", "10.0.2.2").replace("127.0.0.1", "10.0.2.2")
+
+            tenantId = config.optString("tenant_id", "default")
+            userId = config.optString("user_id", "")
+
+            updateStatus("Configured: $userId @ $tenantId. Registering...")
+            register()
+
+        } catch (e: Exception) {
+            updateStatus("Config Error: ${e.message}")
+        }
+    }
+
+    private fun updateStatus(msg: String) {
+        runOnUiThread {
+            findViewById<TextView>(R.id.tvStatus).text = msg
         }
     }
 
@@ -53,11 +90,15 @@ class MainActivity : AppCompatActivity() {
                 json.put("push_endpoint", "")
 
                 val resp = post("$baseUrl/register", json.toString())
+
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "Registered: $resp", Toast.LENGTH_LONG).show()
+                    updateStatus("Registration Success: $userId")
+                    Toast.makeText(this@MainActivity, "Registered!", Toast.LENGTH_SHORT).show()
+                    findViewById<Button>(R.id.btnAuth).isEnabled = true
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
+                    updateStatus("Reg Error: ${e.message}")
                     Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }

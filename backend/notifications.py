@@ -43,6 +43,26 @@ def send_alert(tenant_id, event_type, user_id, status, details, channel_config):
             s.send_message(msg)
             s.quit()
 
+        elif channel_config['type'] == 'MAILGUN':
+            config = channel_config['config']
+            domain = config.get('domain')
+            api_key = config.get('api_key')
+            sender = config.get('sender', f"alert@{domain}")
+            recipient = config.get('email')
+
+            if domain and api_key and recipient:
+                requests.post(
+                    f"https://api.mailgun.net/v3/{domain}/messages",
+                    auth=("api", api_key),
+                    data={
+                        "from": f"Indigo MFA <{sender}>",
+                        "to": recipient,
+                        "subject": f"Indigo Alert: {status} - {user_id}",
+                        "text": msg_body
+                    },
+                    timeout=5
+                )
+
     except Exception as e:
         logger.error(f"Failed to send alert: {e}")
 

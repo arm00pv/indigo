@@ -14,17 +14,34 @@
         android:textStyle="bold"
         android:layout_marginBottom="32dp"/>
 
-    <Button
-        android:id="@+id/btnRegister"
+    <TextView
+        android:id="@+id/tvStatus"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Register Device"
+        android:text="Status: Not Registered"
+        android:gravity="center"
+        android:layout_marginBottom="16dp"/>
+
+    <EditText
+        android:id="@+id/etSmartCode"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Paste Smart Code / JSON Config"
+        android:minLines="2"
+        android:layout_marginBottom="8dp"/>
+
+    <Button
+        android:id="@+id/btnConfig"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Configure & Register"
         android:layout_marginBottom="16dp"/>
 
     <Button
         android:id="@+id/btnAuth"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Authenticate (Login)"/>
+        android:text="Authenticate (Login)"
+        android:enabled="false"/>
 
 </LinearLayout>
